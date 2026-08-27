@@ -3,11 +3,20 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = 'force-dynamic';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiClient: GoogleGenAI | null = null;
+
+function getAi() {
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'dummy_key_for_build' });
+  }
+  return aiClient;
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const ai = getAi();
     const { messages } = await req.json();
+
     
     const systemInstruction = `Você é um assistente virtual veterinário compassivo do sistema VetPro Orienta. 
 Seu objetivo é fazer uma triagem e um pré-diagnóstico de pets com base nas informações passadas pelo tutor.
