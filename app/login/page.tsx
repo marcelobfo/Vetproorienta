@@ -3,11 +3,10 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { PawPrint, Mail, Lock, User, Building, ArrowRight, Loader2 } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Loader2, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 
 export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -20,51 +19,32 @@ export default function LoginPage() {
     const formData = new FormData(e.currentTarget);
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
-    const name = formData.get('name') as string;
-    const clinicName = formData.get('clinicName') as string;
 
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+      const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      
+      const userEmail = authData.user?.email?.toLowerCase() || '';
+      const isSuperEmail = userEmail === 'marcelobfo@gmail.com' || userEmail.includes('admin@vetpro');
+
+      // Busca perfil e papel
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role, subscription_status')
+        .eq('id', authData.user.id)
+        .single();
+        
+      if (profile?.role === 'super_admin' || isSuperEmail) {
+        router.push('/dashboard/super');
+      } else if (profile?.role === 'admin' || profile?.role === 'veterinario') {
         router.push('/dashboard/admin');
       } else {
-        // Registro
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        
-        if (authError) throw authError;
-
-        if (authData.user) {
-          // 1. Cria a Clínica (Tenant)
-          const { data: tenant, error: tenantError } = await supabase
-            .from('tenants')
-            .insert([{ name: clinicName }])
-            .select()
-            .single();
-            
-          if (tenantError) throw tenantError;
-
-          // 2. Cria o Perfil de Super Admin vinculado ao Tenant
-          const { error: profileError } = await supabase
-            .from('user_profiles')
-            .insert([{
-              id: authData.user.id,
-              tenant_id: tenant.id,
-              full_name: name,
-              role: 'admin'
-            }]);
-
-          if (profileError) throw profileError;
-          
-          alert('Conta criada com sucesso! Faça login para continuar.');
-          setIsLogin(true);
-        }
+        // Tutor: verificar se tem status de assinatura ativa
+        // O tutor tem acesso aos seus pets e triagem se estiver adimplente
+        router.push('/dashboard');
       }
     } catch (err: any) {
-      setError(err.message || 'Ocorreu um erro durante a autenticação.');
+      setError(err.message || 'E-mail ou senha incorretos.');
     } finally {
       setLoading(false);
     }
@@ -81,10 +61,10 @@ export default function LoginPage() {
         </Link>
 
         <h2 className="font-display text-xl font-bold mb-2 text-center">
-          {isLogin ? 'Bem-vindo de volta!' : 'Crie sua conta (Admin)'}
+          Acesso à Plataforma
         </h2>
         <p className="text-brand-text-muted text-sm text-center mb-8">
-          {isLogin ? 'Acesse seu painel de controle.' : 'Comece a usar a plataforma multi-tenant.'}
+          Acesse seu painel com sua conta cadastrada.
         </p>
 
         {error && (
@@ -94,30 +74,17 @@ export default function LoginPage() {
         )}
 
         <form onSubmit={handleAuth} className="flex flex-col gap-4">
-          {!isLogin && (
-            <>
-              <div>
-                <label className="block text-[13px] text-brand-text-muted mb-1.5 font-medium">Nome completo</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-text-muted" />
-                  <input required name="name" type="text" placeholder="Dr. Veterinário" className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-brand-accent transition-colors text-[14px]" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[13px] text-brand-text-muted mb-1.5 font-medium">Nome da Clínica (Tenant)</label>
-                <div className="relative">
-                  <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-text-muted" />
-                  <input required name="clinicName" type="text" placeholder="Minha Clínica Vet" className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-brand-accent transition-colors text-[14px]" />
-                </div>
-              </div>
-            </>
-          )}
-
           <div>
             <label className="block text-[13px] text-brand-text-muted mb-1.5 font-medium">E-mail</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-text-muted" />
-              <input required name="email" type="email" placeholder="voce@email.com" className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-brand-accent transition-colors text-[14px]" />
+              <input 
+                required 
+                name="email" 
+                type="email" 
+                placeholder="seu.email@exemplo.com" 
+                className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-brand-teal transition-colors text-[14px]" 
+              />
             </div>
           </div>
           
@@ -125,33 +92,40 @@ export default function LoginPage() {
             <label className="block text-[13px] text-brand-text-muted mb-1.5 font-medium">Senha</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-text-muted" />
-              <input required name="password" type="password" placeholder="••••••••" minLength={6} className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-brand-accent transition-colors text-[14px]" />
+              <input 
+                required 
+                name="password" 
+                type="password" 
+                placeholder="••••••••" 
+                minLength={6} 
+                className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-brand-teal transition-colors text-[14px]" 
+              />
             </div>
           </div>
 
-          {isLogin && (
-            <div className="flex justify-end -mt-2">
-              <Link href="/esqueci-senha" className="text-[12px] text-brand-teal hover:underline font-medium">
-                Esqueci minha senha
-              </Link>
-            </div>
-          )}
+          <div className="flex justify-end -mt-2">
+            <Link href="/esqueci-senha" className="text-[12px] text-brand-teal hover:underline font-medium">
+              Esqueci minha senha
+            </Link>
+          </div>
 
           <button 
             type="submit" 
             disabled={loading}
             className="w-full mt-2 bg-brand-teal text-brand-bg px-4 py-3.5 rounded-xl font-bold text-[14px] hover:bg-brand-teal/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : (isLogin ? 'Entrar no Painel' : 'Criar Conta e Tenant')}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Entrar no Painel'}
             {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-brand-text-muted">
-          {isLogin ? 'Ainda não tem conta?' : 'Já tem uma conta?'}
-          <button onClick={() => setIsLogin(!isLogin)} className="ml-1 text-brand-teal font-medium hover:underline">
-            {isLogin ? 'Cadastre-se' : 'Faça login'}
-          </button>
+        {/* Informação sobre cadastro restrito */}
+        <div className="mt-8 pt-6 border-t border-brand-border-strong flex items-start gap-3 bg-brand-surface-2/40 p-4 rounded-xl text-xs text-brand-text-muted">
+          <ShieldAlert className="w-4 h-4 text-brand-teal shrink-0 mt-0.5" />
+          <div>
+            <span className="font-semibold text-brand-text block mb-0.5">Novo por aqui?</span>
+            O cadastro de novos tutores e clínicas é realizado através da adesão a um dos <Link href="/#planos" className="text-brand-teal hover:underline font-medium">planos da plataforma</Link> ou convite interno do administrador.
+          </div>
         </div>
       </div>
     </div>

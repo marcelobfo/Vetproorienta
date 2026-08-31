@@ -1,318 +1,562 @@
 'use client';
 
 import Link from 'next/link';
-import { PawPrint, CheckCircle2, Video, Heart, Shield, HelpCircle, MessageCircle, X, Clock, Smartphone, Star, Search, FileText, AlertCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { 
+  PawPrint, CheckCircle2, Video, Heart, Shield, HelpCircle, 
+  MessageCircle, X, Clock, Smartphone, Star, Search, FileText, 
+  AlertCircle, RefreshCw, Lock, Sparkles, ChevronDown, 
+  ShieldAlert, Stethoscope, HeartPulse, UserCheck, Baby, Activity
+} from 'lucide-react';
 import { useState } from 'react';
+import { createAsaasCustomer, createAsaasSubscription, getAsaasConfig } from '@/lib/asaas';
 
 export default function LandingPage() {
+  const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('');
+  const [cpfCnpj, setCpfCnpj] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+
+  const [planPrices] = useState(() => {
+    const cfg = getAsaasConfig();
+    return {
+      essencial: cfg.planEssencialPrice || 9.90,
+      especialista: cfg.planEspecialistaPrice || 29.90,
+    };
+  });
 
   const plans = [
     {
       id: "essencial",
       name: "Essencial",
-      desc: "Orientação por chat com a nossa equipe",
-      price: "9,90",
+      desc: "Orientação e triagem técnica rápida com inteligência e suporte",
+      price: planPrices.essencial.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      numericPrice: planPrices.essencial,
       period: "/mês",
       highlight: false,
       features: [
-        { text: "Chat com a equipe VetPro Orienta", strong: false },
-        { text: "Envio de fotos, vídeos e exames", strong: false },
-        { text: "Respostas em até 24h", strong: false },
-        { text: "Cancele quando quiser", strong: false }
+        { text: "Orientação e triagem técnica por chat e WhatsApp", strong: false },
+        { text: "Envio de fotos, vídeos e resultados de exames", strong: false },
+        { text: "Respostas e direcionamento ágil", strong: false },
+        { text: "Suporte informativo para o dia a dia", strong: false },
+        { text: "Cancele quando quiser, sem carência", strong: false }
       ]
     },
     {
       id: "especialista",
       name: "Especialista",
-      desc: "Com atendimento humano especializado",
-      price: "29,90",
+      desc: "Atendimento humano com médico-veterinário dedicado",
+      price: planPrices.especialista.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      numericPrice: planPrices.especialista,
       period: "/mês",
       highlight: true,
       features: [
-        { text: "Tudo do plano Essencial", strong: false },
-        { text: "Atendimento humano especializado com médico-veterinário", strong: true },
-        { text: "Prioridade nas respostas", strong: false },
-        { text: "Cancele quando quiser", strong: false }
+        { text: "Tudo incluído do plano Essencial", strong: false, hasLock: false },
+        { text: "Atendimento humano e especializado com médico-veterinário", strong: true, hasLock: true },
+        { text: "Avaliação cuidadosa de exames e histórico clínico", strong: true, hasLock: false },
+        { text: "Prioridade máxima de resposta e acompanhamento", strong: false, hasLock: false },
+        { text: "Cancele quando quiser, sem fidelidade", strong: false, hasLock: false }
       ]
+    }
+  ];
+
+  const faqs = [
+    {
+      question: "A orientação técnica por IA substitui uma consulta com médico-veterinário?",
+      answer: "Não. A orientação técnica e os recursos de inteligência artificial são ferramentas de triagem, apoio informativo e acolhimento rápido para dúvidas cotidianas. Para uma orientação mais precisa, diagnóstico clínico definitivo ou prescrição de medicamentos, você deve procurar um médico-veterinário de sua confiança ou assinar o nosso Plano Especialista com médico-veterinário dedicado. A IA nunca substitui a avaliação física presencial de um profissional especializado."
+    },
+    {
+      question: "Como funciona o atendimento no Plano Especialista?",
+      answer: "No Plano Especialista, você tem acesso ao atendimento humano com médicos-veterinários. Você pode relatar sintomas, enviar fotos, vídeos do pet e laudos de exames laboratoriais ou de imagem. O profissional analisa o caso individualmente, oferecendo um direcionamento aprofundado, orientações de conduta e recomendações personalizadas."
+    },
+    {
+      question: "O que é a dobra de orientação da VetPro Orienta?",
+      answer: "É um serviço de triagem e suporte contínuo para tutores de cães e gatos. Ajudamos a identificar se uma situação requer atendimento hospitalar imediato, tiramos dúvidas sobre vacinação, alimentação, cuidados com filhotes ou pets idosos, prevenindo a automedicação indevida."
+    },
+    {
+      question: "Posso enviar fotos, vídeos e resultados de exames?",
+      answer: "Sim! Você pode anexar fotos de lesões ou alterações, vídeos mostrando o comportamento do animal e PDFs ou fotos de exames de sangue e ultrassonografia para enriquecer a orientação."
+    },
+    {
+      question: "Como funciona a assinatura e o pagamento?",
+      answer: "A cobrança é mensal e processada de forma 100% segura através do gateway bancário Asaas. Você pode pagar via PIX, Cartão de Crédito ou Boleto Bancário. Não há taxa de adesão, carência ou multas de fidelidade: você pode cancelar a qualquer momento."
+    },
+    {
+      question: "O que devo fazer em casos de emergência grave?",
+      answer: "Se o seu pet apresentar sinais graves (dificuldade respiratória aguda, convulsões ativas, sangramento incontrolável, intoxicação recente por venenos ou traumas graves por atropelamento), dirija-se imediatamente a um hospital veterinário 24 horas de sua confiança para atendimento emergencial presencial."
+    }
+  ];
+
+  const targetAudiences = [
+    {
+      icon: Baby,
+      title: "Tutores de Primeira Viagem",
+      description: "Acabou de adotar um filhote e tem dúvidas sobre vacinação, introdução alimentar, vermifugação e adaptação ao novo lar."
+    },
+    {
+      icon: Activity,
+      title: "Pets Idosos ou com Condições Crônicas",
+      description: "Acompanhamento de exames de rotina, monitoramento de sinais sutis de dor, dúvidas sobre rotina e qualidade de vida na terceira idade."
+    },
+    {
+      icon: Clock,
+      title: "Rotina Corrida sem Tempo a Perder",
+      description: "Orientação rápida na palma da mão para não perder tempo com desinformação na internet nem deslocamentos desnecessários para dúvidas simples."
+    },
+    {
+      icon: ShieldAlert,
+      title: "Quem Quer Evitar Erros e Automedicação",
+      description: "Segurança total para nunca oferecer alimentos tóxicos ou medicamentos humanos que colocam a vida do seu animal em risco."
+    },
+    {
+      icon: Stethoscope,
+      title: "Triagem Confiável e Acolhedora",
+      description: "Entenda se o sintoma é motivo de urgência imediata ou se pode ser monitorado com segurança até a próxima consulta presencial."
+    },
+    {
+      icon: HeartPulse,
+      title: "Quem Busca o Melhor para o Pet",
+      description: "Acesso a suporte atencioso com opção de plano com especialista humano para uma avaliação técnica ainda mais completa."
     }
   ];
 
   const handleOpenModal = (planId: string) => {
     setSelectedPlan(planId);
+    setSubmitError(null);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
+    setSubmitError(null);
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const formatCpfCnpj = (val: string) => {
+    const digits = val.replace(/\D/g, '');
+    if (digits.length <= 11) {
+      return digits
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+        .slice(0, 14);
+    }
+    return digits
+      .replace(/(\d{2})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1/$2')
+      .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
+      .slice(0, 18);
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setSubmitError(null);
+
     const formData = new FormData(e.currentTarget);
-    const name = formData.get('name') as string;
-    const planName = plans.find(p => p.id === selectedPlan)?.name || 'Essencial';
-    
-    // Na vida real enviaria para o webhook aqui.
-    // Redirecionando para a página de obrigado (que simula a continuação)
-    window.location.href = `/obrigado?nome=${encodeURIComponent(name)}&plano=${encodeURIComponent(planName)}`;
+    const name = (formData.get('name') as string || '').trim();
+    const email = (formData.get('email') as string || '').trim();
+    const whatsapp = (formData.get('whatsapp') as string || '').trim();
+    const rawCpf = cpfCnpj.replace(/\D/g, '');
+
+    if (!name || rawCpf.length < 11) {
+      setSubmitError('Por favor, informe seu nome completo e um CPF/CNPJ válido.');
+      return;
+    }
+
+    const planObj = plans.find(p => p.id === selectedPlan) || plans[0];
+    setIsSubmitting(true);
+
+    try {
+      // Obtém configurações locais de Asaas e Supabase para garantir que o backend utilize as credenciais configuradas
+      const localAsaasConfig = getAsaasConfig();
+      const localSupabaseUrl = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_url') : '';
+      const localSupabaseAnonKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_anon_key') : '';
+      const localSupabaseServiceKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_service_key') : '';
+
+      // Chama o endpoint unificado de cadastro: cria cliente no Asaas, cria assinatura, cria usuário no banco com senha=CPF e envia WhatsApp com checkout
+      const regRes = await fetch('/api/cadastro/cliente-usuario', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          email,
+          cpfCnpj: rawCpf,
+          whatsapp,
+          planId: planObj.id,
+          planName: planObj.name,
+          planPrice: planObj.numericPrice,
+          dueDaysOffset: localAsaasConfig.dueDaysOffset !== undefined ? localAsaasConfig.dueDaysOffset : 1,
+          asaasConfig: {
+            apiKey: localAsaasConfig.apiKey,
+            environment: localAsaasConfig.environment,
+            customBaseUrl: localAsaasConfig.customBaseUrl,
+          },
+          supabaseConfig: {
+            url: localSupabaseUrl,
+            anonKey: localSupabaseAnonKey,
+            serviceRoleKey: localSupabaseServiceKey,
+          },
+        }),
+      });
+
+      const regData = await regRes.json();
+
+      let asaasCustomerId = regData.asaas?.customerId || '';
+      let subscriptionId = regData.asaas?.subscriptionId || '';
+      let paymentUrl = regData.asaas?.paymentUrl || '';
+      let pixQrCodeImage = regData.asaas?.pixQrCodeImage || '';
+      let pixCopiaECola = regData.asaas?.pixCopiaECola || '';
+      let paymentId = regData.asaas?.paymentId || '';
+
+      // Salva no localStorage para a sessão do tutor
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vetpro_tutor_name', name);
+        localStorage.setItem('vetpro_tutor_email', email);
+        localStorage.setItem('vetpro_tutor_phone', whatsapp);
+        localStorage.setItem('vetpro_tutor_cpf', rawCpf);
+        localStorage.setItem('vetpro_selected_plan', planObj.id);
+        localStorage.setItem('vetpro_subscription_status', 'PENDING_PAYMENT');
+        if (asaasCustomerId) {
+          localStorage.setItem('vetpro_asaas_customer_id', asaasCustomerId);
+        }
+        if (subscriptionId) {
+          localStorage.setItem('vetpro_asaas_subscription_id', subscriptionId);
+        }
+        if (paymentUrl) {
+          localStorage.setItem('vetpro_payment_url', paymentUrl);
+        }
+        if (pixQrCodeImage) {
+          localStorage.setItem('vetpro_pix_qrcode', pixQrCodeImage);
+        }
+        if (pixCopiaECola) {
+          localStorage.setItem('vetpro_pix_copia_cola', pixCopiaECola);
+        }
+      }
+
+      // Redireciona para a página de confirmação / onboarding com os dados
+      const queryParams = new URLSearchParams({
+        nome: name,
+        email: email,
+        plano: planObj.name,
+        planoId: planObj.id,
+        valor: planObj.price,
+      });
+
+      if (asaasCustomerId) {
+        queryParams.set('customer_id', asaasCustomerId);
+      }
+      if (subscriptionId) {
+        queryParams.set('subscription_id', subscriptionId);
+      }
+      if (paymentUrl) {
+        queryParams.set('payment_url', paymentUrl);
+      }
+      if (paymentId) {
+        queryParams.set('payment_id', paymentId);
+      }
+      if (regData.whatsapp?.sent) {
+        queryParams.set('whatsapp_sent', 'true');
+      }
+
+      router.push(`/obrigado?${queryParams.toString()}`);
+    } catch (err: any) {
+      console.error('Erro no cadastro:', err);
+      const planName = planObj.name;
+      router.push(`/obrigado?nome=${encodeURIComponent(name)}&plano=${encodeURIComponent(planName)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="min-h-screen relative font-body selection:bg-brand-teal/30 selection:text-brand-text">
-      <div className="fixed inset-0 pointer-events-none -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand-teal/10 via-brand-bg to-brand-bg h-[600px]" />
+      
+      {/* Background Decorators */}
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand-teal/15 via-brand-bg to-brand-bg h-[650px]" />
       
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-brand-bg/85 backdrop-blur-md border-b border-brand-border">
-        <div className="max-w-6xl mx-auto px-6 h-[76px] flex items-center justify-between">
-          <div className="flex items-center gap-2.5 font-display font-bold text-[19px]">
-            <span className="w-[34px] h-[34px] rounded-xl bg-brand-accent/15 flex items-center justify-center text-[17px]">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-brand-bg/80 backdrop-blur-md border-b border-brand-border-strong">
+        <div className="max-w-[1140px] mx-auto px-6 h-[76px] flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5 font-display font-bold text-[20px] tracking-tight">
+            <span className="w-[34px] h-[34px] rounded-xl bg-brand-accent/15 flex items-center justify-center text-[18px]">
               🐾
             </span>
             <span>VetPro <b className="text-brand-teal">Orienta</b></span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard" className="text-sm font-medium hover:text-brand-teal transition-colors">
-              Área do Tutor
-            </Link>
-            <button 
-              onClick={() => handleOpenModal('essencial')}
-              className="bg-gradient-to-b from-brand-accent-2 to-brand-accent text-brand-accent-ink px-[18px] py-[11px] rounded-full font-display font-semibold text-[13.5px] hover:-translate-y-0.5 hover:shadow-[0_14px_30px_-10px_rgba(34,197,94,0.65)] transition-all"
+          </Link>
+          
+          <nav className="hidden md:flex items-center gap-8 text-[14.5px] font-medium text-brand-text-muted">
+            <a href="#como-funciona" className="hover:text-brand-text transition-colors">Como funciona</a>
+            <a href="#para-quem" className="hover:text-brand-text transition-colors">Para quem é</a>
+            <a href="#planos" className="hover:text-brand-text transition-colors">Planos</a>
+            <a href="#faq" className="hover:text-brand-text transition-colors">Dúvidas</a>
+          </nav>
+
+          <div className="flex items-center gap-3">
+            <Link 
+              href="/login"
+              className="text-xs font-semibold px-4 py-2 rounded-full border border-brand-border-strong hover:bg-brand-surface text-brand-text transition-colors"
             >
-              Quero conhecer
-            </button>
+              Entrar
+            </Link>
+            <a 
+              href="#planos"
+              className="bg-brand-teal text-brand-bg px-5 py-2 rounded-full font-display font-semibold text-[13.5px] hover:bg-brand-teal/90 transition-all shadow-sm"
+            >
+              Assinar Plano
+            </a>
           </div>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="pt-16 px-6 relative border-b border-brand-border-strong overflow-hidden">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-[0.85fr_1.15fr] gap-12 items-end">
-          <div className="pb-20">
-            <span className="font-display text-[12.5px] font-semibold tracking-wider uppercase text-brand-teal flex items-center gap-2 mb-4">
-              🐾 Orientação veterinária online
-            </span>
-            <h1 className="font-display text-4xl md:text-[44px] leading-[1.14] font-bold mb-6 tracking-tight">
-              A saúde do seu pet <span className="text-brand-teal">na palma da sua mão.</span>
+      {/* Hero Section */}
+      <section className="relative pt-[120px] pb-20 md:pt-[135px] md:pb-28 overflow-hidden">
+        <div className="max-w-[1140px] mx-auto px-6 grid lg:grid-cols-12 gap-12 items-center">
+          
+          <div className="lg:col-span-7 flex flex-col items-start -mt-8 md:-mt-12">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-teal/10 border border-brand-teal/20 text-brand-teal text-[12.5px] font-semibold mb-6">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Orientação Veterinária Acessível & Digital</span>
+            </div>
+
+            <h1 className="font-display text-[38px] md:text-[50px] font-extrabold leading-[1.12] tracking-tight mb-6">
+              Dúvidas sobre seu pet? <br />
+              <span className="text-brand-teal">Orientação veterinária</span> na palma da sua mão.
             </h1>
-            <p className="text-brand-text-muted text-[16.5px] mb-8 max-w-[48ch]">
-              Esqueça o desespero de pesquisar sintomas no Google. Converse com especialistas, envie fotos e vídeos, e tenha orientação confiável de onde estiver, na hora que precisar.
+
+            <p className="text-[17px] text-brand-text-muted leading-[1.65] mb-8 max-w-[560px]">
+              Tire dúvidas do dia a dia, entenda sintomas e receba a melhor recomendação para a saúde do seu cão ou gato, direto no WhatsApp ou no painel.
             </p>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
-              <button 
-                onClick={() => handleOpenModal('essencial')}
-                className="w-full sm:w-auto bg-gradient-to-b from-brand-accent-2 to-brand-accent text-brand-accent-ink px-[26px] py-[15px] rounded-full font-display font-semibold text-[15px] hover:-translate-y-0.5 hover:shadow-[0_14px_30px_-10px_rgba(34,197,94,0.65)] transition-all flex items-center justify-center gap-2"
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto mb-8">
+              <a 
+                href="#planos"
+                className="bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink px-8 py-4 rounded-full font-display font-bold text-[15px] hover:-translate-y-0.5 hover:shadow-lg transition-all flex items-center justify-center gap-2 text-center"
               >
-                Quero conhecer o VetPro
-                <svg viewBox="0 0 20 20" fill="none" className="w-4 h-4"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </button>
-              <div className="flex items-center gap-3 text-sm text-brand-text-muted">
-                <div className="flex -space-x-2">
-                  <div className="w-8 h-8 rounded-full bg-brand-surface-2 border-2 border-brand-bg flex items-center justify-center text-[10px]">👩</div>
-                  <div className="w-8 h-8 rounded-full bg-brand-surface-2 border-2 border-brand-bg flex items-center justify-center text-[10px]">🧔</div>
-                  <div className="w-8 h-8 rounded-full bg-brand-surface-2 border-2 border-brand-bg flex items-center justify-center text-[10px]">👱‍♀️</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="flex text-brand-accent-2">
-                    <Star className="w-3 h-3 fill-current" />
-                    <Star className="w-3 h-3 fill-current" />
-                    <Star className="w-3 h-3 fill-current" />
-                    <Star className="w-3 h-3 fill-current" />
-                    <Star className="w-3 h-3 fill-current" />
-                  </div>
-                  <span className="text-[11px] mt-0.5 font-medium">Tutores tranquilos</span>
-                </div>
-              </div>
+                Conhecer Planos e Assinar
+              </a>
+              <a 
+                href="#como-funciona"
+                className="px-6 py-4 rounded-full bg-brand-surface border border-brand-border-strong font-display font-semibold text-[14px] text-brand-text hover:bg-brand-surface-2 transition-all flex items-center justify-center gap-2 text-center"
+              >
+                Entenda como funciona
+              </a>
             </div>
-          </div>
-          <div className="relative w-full flex items-end justify-center md:justify-end md:-mr-12 -mb-[1px]">
-             {/* eslint-disable-next-line @next/next/no-img-element */}
-             <img src="https://oeobudcffkeqejpxpenf.supabase.co/storage/v1/object/public/Imagens/editada_chicao%20(1).png" alt="VetPro Orienta" className="w-[115%] md:w-[130%] max-w-none h-auto object-contain object-bottom drop-shadow-2xl translate-y-[2px]" />
-          </div>
-        </div>
-      </section>
 
-      {/* Persuasive Benefits Section */}
-      <section className="py-24 bg-brand-bg-elevated border-y border-brand-border">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-16">
-            <h2 className="font-display text-3xl font-bold mb-4">Por que escolher o VetPro Orienta?</h2>
-            <p className="text-brand-text-muted text-[16px] leading-relaxed">
-              O Google não conhece o seu pet, e clínicas 24h podem custar caro para tirar uma dúvida simples. Nós unimos a praticidade que você quer com a segurança que o seu melhor amigo precisa.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {/* Card 1 */}
-            <div className="bg-brand-surface border border-brand-border-strong rounded-3xl p-8 hover:border-brand-teal/40 transition-colors">
-              <div className="w-12 h-12 rounded-2xl bg-brand-teal/10 flex items-center justify-center mb-6 text-brand-teal">
-                <Smartphone className="w-6 h-6" />
-              </div>
-              <h3 className="font-display text-xl font-bold mb-3">Praticidade Absoluta</h3>
-              <p className="text-[14.5px] text-brand-text-muted leading-relaxed">
-                Tire dúvidas diretamente pelo seu celular. Chega de trânsito ou estresse na sala de espera para resolver questões simples de manejo, pele ou alimentação.
+            {/* Aviso ético sutil na Hero */}
+            <div className="p-3.5 rounded-2xl bg-brand-surface border border-brand-border-strong flex items-start gap-2.5 max-w-[560px] text-xs text-brand-text-muted mb-8">
+              <Stethoscope className="w-4 h-4 text-brand-teal shrink-0 mt-0.5" />
+              <p className="text-[12px] leading-relaxed">
+                <strong className="text-brand-text">Aviso ético importante:</strong> A orientação por IA ou triagem não substitui a consulta clínica presencial. Para uma orientação mais precisa, consulte sempre seu médico-veterinário de confiança ou assine nosso plano com especialista.
               </p>
             </div>
-            {/* Card 2 */}
-            <div className="bg-brand-surface border border-brand-border-strong rounded-3xl p-8 hover:border-brand-teal/40 transition-colors">
-              <div className="w-12 h-12 rounded-2xl bg-brand-accent/10 flex items-center justify-center mb-6 text-brand-accent-2">
-                <Search className="w-6 h-6" />
+
+            {/* Badges / Micro-prova social */}
+            <div className="flex flex-wrap items-center gap-6 pt-4 border-t border-brand-border-strong/60 w-full text-xs text-brand-text-muted">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-brand-teal" />
+                <span>Sem carência</span>
               </div>
-              <h3 className="font-display text-xl font-bold mb-3">Diga adeus ao "Dr. Google"</h3>
-              <p className="text-[14.5px] text-brand-text-muted leading-relaxed">
-                Pesquisar sintomas na internet gera pânico desnecessário. Converse com nossa IA treinada e com especialistas reais para ter direcionamentos precisos e seguros.
-              </p>
-            </div>
-            {/* Card 3 */}
-            <div className="bg-brand-surface border border-brand-border-strong rounded-3xl p-8 hover:border-brand-teal/40 transition-colors">
-              <div className="w-12 h-12 rounded-2xl bg-brand-teal/10 flex items-center justify-center mb-6 text-brand-teal">
-                <FileText className="w-6 h-6" />
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-brand-teal" />
+                <span>Cancele quando quiser</span>
               </div>
-              <h3 className="font-display text-xl font-bold mb-3">Histórico Organizado</h3>
-              <p className="text-[14.5px] text-brand-text-muted leading-relaxed">
-                Cada triagem fica salva no perfil do seu pet. Mantenha um prontuário digital completo para consultar ou mostrar ao veterinário presencial quando necessário.
-              </p>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-brand-teal" />
+                <span>Cobrança segura via Asaas</span>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Social Proof / Features */}
-      <section className="py-24 px-6 relative overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-brand-accent/5 rounded-full blur-[100px] pointer-events-none" />
-        <div className="max-w-6xl mx-auto relative z-10">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div>
-              <h2 className="font-display text-3xl font-bold mb-6 leading-tight">
-                Mais de 1.000 tutores já dormem tranquilos sabendo que têm apoio.
-              </h2>
-              <div className="flex flex-col gap-6">
-                <div className="bg-brand-surface border border-brand-border-strong rounded-3xl p-8 shadow-xl">
-                  <div className="flex items-center gap-1 mb-4 text-brand-accent-2">
-                    <Star className="w-4 h-4 fill-current" /><Star className="w-4 h-4 fill-current" /><Star className="w-4 h-4 fill-current" /><Star className="w-4 h-4 fill-current" /><Star className="w-4 h-4 fill-current" />
-                  </div>
-                  <p className="text-[15.5px] text-brand-text-muted italic mb-6 leading-relaxed">
-                    "Minha cachorrinha começou a vomitar de madrugada. Usei a triagem e o VetPro Orienta me acalmou na mesma hora, me ensinando o que observar até de manhã. Vale cada centavo pela paz de espírito!"
-                  </p>
-                  <div className="text-sm font-medium text-brand-text flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-brand-surface-2 flex items-center justify-center">👱‍♀️</div>
+          {/* Foto da Primeira Dobra */}
+          <div className="lg:col-span-5 relative">
+            <div className="relative mx-auto max-w-[420px] rounded-[28px] overflow-hidden border border-brand-border-strong bg-brand-surface shadow-2xl p-3">
+              <div className="rounded-[22px] overflow-hidden bg-brand-surface-2 border border-brand-border-strong relative aspect-[4/5] flex items-center justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img 
+                  src="https://oeobudcffkeqejpxpenf.supabase.co/storage/v1/object/public/Imagens/editada_chicao%20(1).png" 
+                  alt="Veterinário e Tutor com Pet - VetPro Orienta"
+                  className="w-full h-full object-cover object-center"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-brand-bg via-transparent to-transparent opacity-80" />
+                
+                {/* Floating Card */}
+                <div className="absolute bottom-4 left-4 right-4 bg-brand-surface/90 backdrop-blur-md border border-brand-border-strong rounded-2xl p-4 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center font-bold text-sm">
+                      🩺
+                    </div>
                     <div>
-                      <div>Mariana Costa</div>
-                      <div className="text-xs text-brand-text-muted font-normal">Tutora da Mel 🐶</div>
+                      <h4 className="text-xs font-bold text-brand-text">Equipe VetPro Ativa</h4>
+                      <p className="text-[11px] text-brand-text-muted">Triagem clínica e suporte humanizado</p>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-            
-            <div className="flex flex-col gap-8">
-              <div className="flex gap-5 items-start">
-                <div className="w-14 h-14 rounded-2xl bg-brand-surface border border-brand-border-strong flex items-center justify-center shrink-0 text-brand-teal shadow-md">
-                  <AlertCircle className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="font-display font-bold text-xl mb-2">Prevenção salva vidas</h4>
-                  <p className="text-brand-text-muted text-[14.5px] leading-relaxed">
-                    Saber agir nos primeiros sinais faz toda a diferença para o bem-estar do seu animal e evita gastos altíssimos com urgências de última hora.
-                  </p>
-                </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* Como Funciona */}
+      <section id="como-funciona" className="py-20 bg-brand-surface/40 border-y border-brand-border-strong">
+        <div className="max-w-[1140px] mx-auto px-6">
+          <div className="text-center max-w-[620px] mx-auto mb-14">
+            <h2 className="font-display text-[30px] font-bold tracking-tight mb-3">Como Funciona a VetPro Orienta?</h2>
+            <p className="text-brand-text-muted text-[15px]">Simples, rápido e no canal que você já usa todo dia.</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6">
+              <div className="w-10 h-10 rounded-xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-display font-bold text-base mb-4">
+                1
               </div>
-              <div className="flex gap-5 items-start">
-                <div className="w-14 h-14 rounded-2xl bg-brand-surface border border-brand-border-strong flex items-center justify-center shrink-0 text-brand-teal shadow-md">
-                  <Video className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="font-display font-bold text-xl mb-2">Avaliação rica e visual</h4>
-                  <p className="text-brand-text-muted text-[14.5px] leading-relaxed">
-                    Mostre exatamente o que está acontecendo enviando fotos de feridas, fezes, ou vídeos de comportamentos estranhos direto pelo chat para uma análise mais precisa.
-                  </p>
-                </div>
+              <h3 className="font-display font-bold text-base mb-2">Escolha seu Plano</h3>
+              <p className="text-xs text-brand-text-muted leading-relaxed">
+                Selecione o plano ideal para você e seu pet. Cadastro rápido com validação de CPF e pagamento seguro via Asaas.
+              </p>
+            </div>
+
+            <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6">
+              <div className="w-10 h-10 rounded-xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-display font-bold text-base mb-4">
+                2
               </div>
-              <div className="flex gap-5 items-start">
-                <div className="w-14 h-14 rounded-2xl bg-brand-surface border border-brand-border-strong flex items-center justify-center shrink-0 text-brand-teal shadow-md">
-                  <Clock className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="font-display font-bold text-xl mb-2">Economia de tempo (e dinheiro)</h4>
-                  <p className="text-brand-text-muted text-[14.5px] leading-relaxed">
-                    Muitas idas à clínica poderiam ser evitadas com uma boa orientação prévia. Tenha um veterinário virtual no bolso por menos que uma assinatura de streaming.
-                  </p>
-                </div>
+              <h3 className="font-display font-bold text-base mb-2">Descreva a Situação</h3>
+              <p className="text-xs text-brand-text-muted leading-relaxed">
+                Envie suas dúvidas, fotos, vídeos de comportamento ou resultados de exames pelo chat do sistema ou WhatsApp.
+              </p>
+            </div>
+
+            <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6">
+              <div className="w-10 h-10 rounded-xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-display font-bold text-base mb-4">
+                3
               </div>
+              <h3 className="font-display font-bold text-base mb-2">Receba a Orientação</h3>
+              <p className="text-xs text-brand-text-muted leading-relaxed">
+                Nossa IA e equipe veterinária especializada avaliam o caso e fornecem o direcionamento ideal para o bem-estar do seu pet.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Plans */}
-      <section className="py-24 px-6" id="planos">
-        <div className="max-w-6xl mx-auto">
-          <div className="bg-brand-surface border border-brand-border-strong rounded-[22px] p-8 md:p-10 mb-12 flex flex-col md:flex-row gap-10 items-center">
-            <div className="flex-1">
-              <span className="inline-flex items-center gap-1.5 bg-brand-accent/15 text-brand-accent-2 border border-brand-accent/35 text-xs font-semibold uppercase tracking-wider px-3 py-1.5 rounded-full mb-4">
-                Lançamento exclusivo
-              </span>
-              <h3 className="font-display text-2xl font-bold mb-3">Um novo jeito de cuidar de quem você ama.</h3>
-              <p className="text-brand-text-muted text-[14.5px]">
-                O VetPro Orienta nasceu para estar com você quando a dúvida aparece — trazendo clareza, confiança e o melhor caminho para o seu pet.
-              </p>
+      {/* Dobra: Para Quem É */}
+      <section id="para-quem" className="py-24 relative overflow-hidden">
+        <div className="max-w-[1140px] mx-auto px-6">
+          <div className="text-center max-w-[680px] mx-auto mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-teal/10 text-brand-teal text-xs font-bold uppercase tracking-wider mb-3">
+              Público-Alvo
             </div>
-            <div className="md:border-l md:border-brand-border-strong md:pl-10 text-center md:text-left w-full md:w-auto">
-              <div className="font-display text-[13px] text-brand-text-muted mb-4">
-                Planos a partir de
-                <b className="block text-[32px] text-brand-text mt-1">R$ 9,90 <small className="text-sm font-medium text-brand-text-muted">/mês</small></b>
-              </div>
-              <button 
-                onClick={() => handleOpenModal('essencial')}
-                className="w-full bg-gradient-to-b from-brand-accent-2 to-brand-accent text-brand-accent-ink px-[26px] py-[15px] rounded-full font-display font-semibold text-[15px] hover:-translate-y-0.5 transition-all"
-              >
-                Quero conhecer
-              </button>
-            </div>
+            <h2 className="font-display text-[32px] md:text-[38px] font-bold tracking-tight mb-4">
+              Para quem é a VetPro Orienta?
+            </h2>
+            <p className="text-brand-text-muted text-[15px] leading-relaxed">
+              Criada para tutores que amam seus animais e buscam respostas rápidas, acolhimento confiável e segurança contra a automedicação ou desinformação.
+            </p>
           </div>
 
-          <div className="text-center max-w-2xl mx-auto mb-10">
-            <span className="font-display text-[12.5px] font-semibold tracking-wider uppercase text-brand-teal flex items-center justify-center gap-2 mb-3">
-              🐾 Planos
-            </span>
-            <h2 className="font-display text-3xl font-bold mb-3">Escolha como quer ser cuidado</h2>
-            <p className="text-brand-text-muted text-[15.5px]">Dois jeitos de ter o VetPro Orienta ao seu lado.</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {targetAudiences.map((item, index) => {
+              const IconComp = item.icon;
+              return (
+                <div 
+                  key={index}
+                  className="bg-brand-surface border border-brand-border-strong rounded-[22px] p-6 hover:border-brand-teal/40 transition-all flex flex-col justify-between group"
+                >
+                  <div>
+                    <div className="w-12 h-12 rounded-2xl bg-brand-teal/10 text-brand-teal flex items-center justify-center mb-5 group-hover:scale-105 transition-transform">
+                      <IconComp className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-display font-bold text-base text-brand-text mb-2">
+                      {item.title}
+                    </h3>
+                    <p className="text-xs text-brand-text-muted leading-relaxed">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Planos Section */}
+      <section id="planos" className="py-24 bg-brand-surface/30 border-y border-brand-border-strong">
+        <div className="max-w-[1140px] mx-auto px-6">
+          <div className="text-center max-w-[620px] mx-auto mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-accent/15 text-brand-accent-2 text-xs font-bold uppercase tracking-wider mb-3">
+              Planos Disponíveis
+            </div>
+            <h2 className="font-display text-[32px] md:text-[38px] font-bold tracking-tight mb-3">
+              Planos Transparentes para Todo Tutor
+            </h2>
+            <p className="text-brand-text-muted text-[15px]">
+              Assine com facilidade, sem contratos longos ou multas. Gestão de cobrança automática e segura pelo banco Asaas.
+            </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-            {plans.map(plan => (
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {plans.map((plan) => (
               <div 
-                key={plan.id} 
-                className={`relative bg-brand-surface border rounded-[22px] p-8 flex flex-col gap-6 transition-all hover:-translate-y-1 ${plan.highlight ? 'border-brand-accent shadow-[0_24px_50px_-26px_rgba(34,197,94,0.4)]' : 'border-brand-border-strong'}`}
+                key={plan.id}
+                className={`relative rounded-[24px] p-8 border flex flex-col justify-between transition-all ${
+                  plan.highlight 
+                    ? 'bg-gradient-to-b from-brand-surface to-brand-surface-2 border-brand-accent shadow-2xl shadow-brand-accent/10' 
+                    : 'bg-brand-surface border-brand-border-strong'
+                }`}
               >
                 {plan.highlight && (
-                  <span className="absolute -top-3 left-6 bg-brand-accent text-brand-accent-ink font-display text-[11px] font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-full">
-                    Atendimento humano
-                  </span>
+                  <div className="absolute -top-3.5 right-6 bg-brand-accent text-brand-accent-ink text-[11px] font-bold uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md">
+                    Mais Escolhido
+                  </div>
                 )}
+
                 <div>
-                  <div className="font-display text-[21px] font-bold">{plan.name}</div>
-                  <div className="text-[13.5px] text-brand-text-muted mt-1.5">{plan.desc}</div>
+                  <h3 className="font-display text-xl font-bold mb-1">{plan.name}</h3>
+                  <p className="text-xs text-brand-text-muted mb-6">{plan.desc}</p>
+                  
+                  <div className="flex items-baseline gap-1 mb-8 pb-6 border-b border-brand-border-strong">
+                    <span className="text-xs font-semibold text-brand-text-muted">R$</span>
+                    <span className="font-display text-4xl font-extrabold tracking-tight">{plan.price}</span>
+                    <span className="text-xs text-brand-text-muted">{plan.period}</span>
+                  </div>
+
+                  <ul className="space-y-3.5 mb-8 text-xs text-brand-text">
+                    {plan.features.map((feat: any, idx: number) => (
+                      <li key={idx} className="flex items-center gap-2.5">
+                        {feat.hasLock ? (
+                          <div className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/40 shadow-sm">
+                            <Lock className="w-2.5 h-2.5 text-amber-400" />
+                          </div>
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-brand-teal shrink-0" />
+                        )}
+                        <span className={`flex items-center gap-1.5 flex-wrap ${feat.strong ? 'font-bold text-brand-teal' : ''}`}>
+                          {feat.text}
+                          {feat.hasLock && (
+                            <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full ml-1">
+                              <Lock className="w-2.5 h-2.5" /> Exclusivo
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <div className="flex items-baseline gap-1.5 font-display">
-                  <span className="text-[15px] text-brand-text-muted font-semibold">R$</span>
-                  <span className="text-4xl font-bold">{plan.price}</span>
-                  <span className="text-[13px] text-brand-text-muted">{plan.period}</span>
-                </div>
-                <ul className="flex flex-col gap-3 flex-1">
-                  {plan.features.map((f, i) => (
-                    <li key={i} className={`flex gap-2.5 text-sm ${f.strong ? 'text-brand-text font-medium' : 'text-brand-text-muted'}`}>
-                      <CheckCircle2 className="w-4 h-4 text-brand-teal shrink-0 mt-0.5" />
-                      <span>{f.text}</span>
-                    </li>
-                  ))}
-                </ul>
-                <button 
+
+                <button
                   onClick={() => handleOpenModal(plan.id)}
-                  className={`w-full py-[15px] rounded-full font-display font-semibold text-[15px] transition-all flex items-center justify-center gap-2 ${plan.highlight ? 'bg-gradient-to-b from-brand-accent-2 to-brand-accent text-brand-accent-ink hover:-translate-y-0.5' : 'bg-transparent text-brand-text border border-brand-border-strong hover:bg-white/5'}`}
+                  className={`w-full py-3.5 rounded-full font-display font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                    plan.highlight
+                      ? 'bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink hover:opacity-95 shadow-lg shadow-brand-accent/20'
+                      : 'bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text'
+                  }`}
                 >
-                  Assinar o {plan.name}
+                  Assinar Plano {plan.name}
                 </button>
               </div>
             ))}
@@ -320,93 +564,198 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-12 border-t border-brand-border text-center text-brand-text-muted text-[13px]">
-        <div className="max-w-6xl mx-auto px-6">
-          © {new Date().getFullYear()} VetPro Orienta. Todos os direitos reservados.
-        </div>
-      </footer>
+      {/* Banner de Responsabilidade Médica-Veterinária (Obrigatório / Ético) */}
+      <section className="py-14 bg-brand-bg">
+        <div className="max-w-[1140px] mx-auto px-6">
+          <div className="p-8 md:p-10 rounded-[24px] bg-gradient-to-r from-brand-surface to-brand-surface-2 border border-brand-teal/30 shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-1">
+                <Stethoscope className="w-6 h-6" />
+              </div>
+              <div className="space-y-2 max-w-3xl">
+                <h3 className="font-display font-bold text-lg text-brand-text flex items-center gap-2">
+                  <span>Compromisso com a Saúde e Ética Veterinária</span>
+                </h3>
+                <p className="text-xs md:text-[13px] text-brand-text-muted leading-relaxed">
+                  Para uma orientação mais precisa, procure sempre um <strong>médico-veterinário presencial de sua confiança</strong> ou assine o nosso plano com o <strong>Especialista</strong>. A orientação técnica por inteligência artificial é uma ferramenta de apoio informativo e triagem preliminar, e <strong>não substitui a consulta física, o exame detalhado e o diagnóstico de um profissional médico-veterinário especializado</strong>.
+                </p>
+              </div>
+            </div>
 
-      {/* Floating WA Button */}
-      <button 
-        onClick={() => handleOpenModal('essencial')}
-        className="fixed right-6 bottom-6 z-50 bg-gradient-to-b from-brand-accent-2 to-brand-accent text-brand-accent-ink px-5 py-3.5 rounded-full font-display font-bold text-[14.5px] flex items-center gap-2.5 shadow-[0_14px_30px_-10px_rgba(34,197,94,0.6)] hover:-translate-y-1 transition-all"
-      >
-        <MessageCircle className="w-5 h-5" />
-        Falar no WhatsApp
-      </button>
-
-      {/* Modal Captura */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 bg-[#040A10]/75 backdrop-blur-sm">
-          <div className="relative w-full max-w-[440px] bg-brand-surface border border-brand-border-strong rounded-[22px] p-8 shadow-[0_40px_80px_-30px_rgba(0,0,0,0.7)] animate-in fade-in zoom-in-95 duration-200">
-            <button 
-              onClick={handleCloseModal}
-              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-brand-surface-2 flex items-center justify-center text-brand-text-muted hover:text-brand-text transition-colors"
+            <a
+              href="#planos"
+              className="px-6 py-3 rounded-full bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-all shrink-0 shadow-md flex items-center gap-2"
             >
-              <X className="w-4 h-4" />
-            </button>
-            
-            {selectedPlan && (
-              <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-brand-accent-2 bg-brand-accent/15 border border-brand-accent/30 px-3 py-1.5 rounded-full mb-5">
-                Plano {plans.find(p => p.id === selectedPlan)?.name}
-              </span>
-            )}
-            
-            <h3 className="font-display text-[21px] font-bold mb-2">Vamos começar!</h3>
-            <p className="text-brand-text-muted text-[14.5px] mb-6">
-              Preencha seus dados abaixo pra gente liberar seu acesso e continuar no WhatsApp.
+              <UserCheck className="w-4 h-4" />
+              Falar com Especialista
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* Faq de Dúvidas */}
+      <section id="faq" className="py-24 bg-brand-surface/20 border-t border-brand-border-strong">
+        <div className="max-w-[860px] mx-auto px-6">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-teal/10 text-brand-teal text-xs font-bold uppercase tracking-wider mb-3">
+              <HelpCircle className="w-3.5 h-3.5" /> Dúvidas Frequentes
+            </div>
+            <h2 className="font-display text-[32px] md:text-[38px] font-bold tracking-tight mb-3">
+              Perguntas Frequentes sobre a VetPro Orienta
+            </h2>
+            <p className="text-brand-text-muted text-[15px]">
+              Tudo o que você precisa saber sobre o funcionamento das orientações, planos e regras.
             </p>
+          </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <div>
-                <label htmlFor="name" className="block text-[13px] text-brand-text-muted mb-1.5 font-medium">Nome completo</label>
-                <input 
-                  type="text" 
-                  id="name" 
-                  name="name" 
-                  required
-                  placeholder="Como podemos te chamar?" 
-                  className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text px-3.5 py-3 rounded-xl focus:outline-none focus:border-brand-accent transition-colors placeholder:text-brand-text-muted/50 text-[15px]"
-                />
+          <div className="space-y-4">
+            {faqs.map((faq, index) => {
+              const isOpen = openFaqIndex === index;
+              return (
+                <div 
+                  key={index}
+                  className="bg-brand-surface border border-brand-border-strong rounded-2xl overflow-hidden transition-all"
+                >
+                  <button
+                    onClick={() => setOpenFaqIndex(isOpen ? null : index)}
+                    className="w-full p-5 md:p-6 text-left flex items-center justify-between gap-4 hover:bg-brand-surface-2/40 transition-colors"
+                  >
+                    <span className="font-display font-bold text-sm md:text-base text-brand-text">
+                      {faq.question}
+                    </span>
+                    <span className={`w-8 h-8 rounded-full bg-brand-surface-2 flex items-center justify-center text-brand-teal shrink-0 transition-transform ${isOpen ? 'rotate-180 bg-brand-teal/15' : ''}`}>
+                      <ChevronDown className="w-4 h-4" />
+                    </span>
+                  </button>
+
+                  {isOpen && (
+                    <div className="px-5 pb-6 md:px-6 md:pb-6 text-xs md:text-[13px] text-brand-text-muted leading-relaxed border-t border-brand-border-strong/50 pt-4">
+                      {faq.answer}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Modal de Cadastro e Assinatura */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-brand-surface border border-brand-border-strong rounded-[24px] p-7 md:p-8 w-full max-w-md shadow-2xl relative">
+            <button
+              onClick={handleCloseModal}
+              className="absolute top-5 right-5 p-1 text-brand-text-muted hover:text-brand-text rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="mb-6">
+              <div className="inline-flex items-center gap-1.5 text-xs text-brand-teal font-bold mb-1">
+                <Lock className="w-3.5 h-3.5" /> Cadastro Seguro via Asaas
               </div>
-              <div>
-                <label htmlFor="email" className="block text-[13px] text-brand-text-muted mb-1.5 font-medium">E-mail</label>
-                <input 
-                  type="email" 
-                  id="email" 
-                  name="email" 
-                  required
-                  placeholder="voce@email.com" 
-                  className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text px-3.5 py-3 rounded-xl focus:outline-none focus:border-brand-accent transition-colors placeholder:text-brand-text-muted/50 text-[15px]"
-                />
+              <h3 className="font-display text-xl font-bold">
+                Assinar Plano {selectedPlan === 'especialista' ? `Especialista (R$ ${planPrices.especialista.toFixed(2).replace('.', ',')}/mês)` : `Essencial (R$ ${planPrices.essencial.toFixed(2).replace('.', ',')}/mês)`}
+              </h3>
+              <p className="text-xs text-brand-text-muted mt-1">
+                Informe seus dados para cadastro do cliente e geração da assinatura.
+              </p>
+            </div>
+
+            {submitError && (
+              <div className="p-3 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{submitError}</span>
               </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
               <div>
-                <label htmlFor="whatsapp" className="block text-[13px] text-brand-text-muted mb-1.5 font-medium">WhatsApp (com DDD)</label>
-                <input 
-                  type="tel" 
-                  id="whatsapp" 
-                  name="whatsapp" 
+                <label className="block font-medium text-brand-text-muted mb-1">Nome Completo *</label>
+                <input
+                  type="text"
+                  name="name"
                   required
-                  placeholder="(00) 00000-0000" 
-                  className="w-full bg-brand-surface-2 border border-brand-border-strong text-brand-text px-3.5 py-3 rounded-xl focus:outline-none focus:border-brand-accent transition-colors placeholder:text-brand-text-muted/50 text-[15px]"
+                  placeholder="Seu nome completo"
+                  className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3.5 py-2.5 text-brand-text focus:outline-none focus:border-brand-teal text-xs"
                 />
               </div>
 
-              <button 
-                type="submit" 
-                className="w-full mt-2 bg-gradient-to-b from-brand-accent-2 to-brand-accent text-brand-accent-ink px-[26px] py-[15px] rounded-full font-display font-semibold text-[15px] hover:-translate-y-0.5 hover:shadow-[0_10px_26px_-10px_rgba(34,197,94,0.55)] transition-all"
-              >
-                Continuar no WhatsApp
-              </button>
-              
-              <p className="text-[11.5px] text-brand-text-muted text-center mt-2 leading-relaxed">
-                Ao continuar, você será redirecionado ao WhatsApp e receberá um e-mail de confirmação com os próximos passos.
+              <div>
+                <label className="block font-medium text-brand-text-muted mb-1">CPF ou CNPJ *</label>
+                <input
+                  type="text"
+                  name="cpfCnpj"
+                  required
+                  value={cpfCnpj}
+                  onChange={(e) => setCpfCnpj(formatCpfCnpj(e.target.value))}
+                  placeholder="000.000.000-00"
+                  className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3.5 py-2.5 text-brand-text focus:outline-none focus:border-brand-teal font-mono text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-brand-text-muted mb-1">E-mail *</label>
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder="seu@email.com"
+                  className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3.5 py-2.5 text-brand-text focus:outline-none focus:border-brand-teal text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-brand-text-muted mb-1">WhatsApp com DDD *</label>
+                <input
+                  type="tel"
+                  name="whatsapp"
+                  required
+                  placeholder="(11) 99999-9999"
+                  className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3.5 py-2.5 text-brand-text focus:outline-none focus:border-brand-teal text-xs"
+                />
+              </div>
+
+              <div className="pt-3">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 rounded-full bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink font-display font-bold text-xs hover:opacity-95 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Cadastrando e Gerando Assinatura no Asaas...
+                    </>
+                  ) : (
+                    'Concluir Cadastro e Ativar Assinatura'
+                  )}
+                </button>
+              </div>
+
+              <p className="text-[11px] text-center text-brand-text-muted">
+                Seus dados serão cadastrados no gateway bancário Asaas em ambiente seguro.
               </p>
             </form>
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer className="border-t border-brand-border-strong py-12 bg-brand-bg">
+        <div className="max-w-[1140px] mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6 text-xs text-brand-text-muted">
+          <div className="flex items-center gap-2 font-display font-bold text-brand-text">
+            <span>🐾 VetPro Orienta</span>
+          </div>
+          <p>© 2026 VetPro Orienta. Todos os direitos reservados. Pagamentos processados via Asaas.</p>
+          <div className="flex items-center gap-4">
+            <Link href="/login" className="hover:text-brand-text">Área Restrita</Link>
+          </div>
+        </div>
+      </footer>
+
     </div>
   );
 }
+

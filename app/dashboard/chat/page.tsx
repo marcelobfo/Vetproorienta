@@ -1,7 +1,20 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect, Suspense } from 'react';
+import { 
+  Send, Bot, User, Loader2, BookOpen, ShieldCheck, 
+  CheckCircle2, Sparkles, Database, ArrowRight, RefreshCw, Dog,
+  History, AlertTriangle, AlertCircle, MessageSquare, ChevronRight, CornerDownLeft
+} from 'lucide-react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import { FormattedText } from '@/lib/textFormatter';
+import { 
+  getSavedPets, savePetRecord, PetRecord, 
+  getChatSessions, getChatSessionById, getLatestChatSessionForPet,
+  saveChatSession, ChatSessionRecord
+} from '@/lib/petService';
 
 type Message = {
   id: string;
@@ -9,99 +22,563 @@ type Message = {
   content: string;
 };
 
-export default function ChatPage() {
+const DEFAULT_INITIAL_MESSAGE = `Olá! Sou o assistente de triagem e pré-diagnóstico do *VetPro Orienta*. 
+
+Para realizarmos a triagem clínica e cadastrarmos o prontuário no sistema, por favor me informe:
+
+* *Seu nome:*
+* *Nome do pet:*
+* *Espécie (cão ou gato):*
+* *Raça:*
+* *Sexo:*
+* *Idade:*
+* *Peso aproximado:*
+
+E me conte o que está acontecendo com ele (sintomas, tempo de evolução e comportamento).`;
+
+function generateUniqueId(prefix = 'id'): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+}
+
+function buildPetWelcomeMessage(pet: PetRecord): string {
+  const tutor = pet.tutor_name ? `Olá, *${pet.tutor_name}*!` : 'Olá!';
+  return `${tutor} 🐾 Sou o assistente de triagem do *VetPro Orienta*.
+
+Já estou com a ficha cadastral do(a) *${pet.name}* aberta no sistema:
+* *Espécie:* ${pet.species || 'Cão'}
+* *Raça:* ${pet.breed || 'SRD'}
+* *Sexo:* ${pet.sex || 'Não informado'}
+* *Idade:* ${pet.age || 'Não informada'}
+* *Peso:* ${pet.weight || 'Não informado'}${pet.symptoms ? `\n* *Últimos sintomas registrados:* ${pet.symptoms}` : ''}
+
+Como posso ajudar você e o(a) *${pet.name}* hoje? Me conte o que você observou de diferente (comportamento, apetite, sintomas ou queixas).`;
+}
+
+function ChatContent() {
+  const searchParams = useSearchParams();
+  const petIdParam = searchParams.get('petId');
+  const sessionIdParam = searchParams.get('sessionId');
+
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [activePet, setActivePet] = useState<PetRecord | null>(null);
+  const [previousSession, setPreviousSession] = useState<ChatSessionRecord | null>(null);
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'model', content: 'Olá! Sou o assistente de pré-diagnóstico do VetPro Orienta. Como posso ajudar com seu pet hoje? Diga-me os sintomas, raça e idade.' }
+    { id: '1', role: 'model', content: DEFAULT_INITIAL_MESSAGE }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [ragCount, setRagCount] = useState<number>(0);
+  const [savedPetInfo, setSavedPetInfo] = useState<Partial<PetRecord> | null>(null);
+  const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+  const [triageStatus, setTriageStatus] = useState<'verde' | 'amarelo' | 'vermelho'>('verde');
+  
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
+
+  // Inicialização inteligente do Chat com base em petId ou sessionId
+  useEffect(() => {
+    async function initChat() {
+      setIsInitializing(true);
+      try {
+        // 1. Carregar contagem RAG
+        if (isSupabaseConfigured()) {
+          const supabase = getSupabaseClient();
+          const { count } = await supabase.from('knowledge_base').select('*', { count: 'exact', head: true });
+          if (count !== null) setRagCount(count);
+        } else {
+          const savedKb = localStorage.getItem('vetpro_knowledge_base');
+          if (savedKb) {
+            const parsed = JSON.parse(savedKb);
+            setRagCount(parsed.length);
+          }
+        }
+
+        const allPets = await getSavedPets();
+
+        // 2. Se foi passado um sessionId na URL -> Carregar a conversa exata
+        if (sessionIdParam) {
+          const existingSession = await getChatSessionById(sessionIdParam);
+          if (existingSession && existingSession.messages.length > 0) {
+            setSessionId(existingSession.id);
+            setMessages(existingSession.messages.map(m => ({
+              id: m.id,
+              role: m.role,
+              content: m.content
+            })));
+            if (existingSession.triage_level) {
+              setTriageStatus(existingSession.triage_level);
+            }
+
+            // Buscar pet vinculado se existir
+            if (existingSession.pet_id) {
+              const matchedPet = allPets.find(p => p.id === existingSession.pet_id);
+              if (matchedPet) {
+                setActivePet(matchedPet);
+                setSavedPetInfo(matchedPet);
+              }
+            } else if (existingSession.pet_name) {
+              setSavedPetInfo({
+                name: existingSession.pet_name,
+                tutor_name: existingSession.tutor_name,
+                species: existingSession.species,
+                breed: existingSession.breed,
+                sex: existingSession.sex,
+                age: existingSession.age,
+                weight: existingSession.weight
+              });
+            }
+            setIsInitializing(false);
+            return;
+          }
+        }
+
+        // 3. Se foi passado um petId na URL (ex: clique no card do Pet)
+        if (petIdParam) {
+          const foundPet = allPets.find(p => p.id === petIdParam);
+          if (foundPet) {
+            setActivePet(foundPet);
+            setSavedPetInfo(foundPet);
+
+            // Verificar se já existe conversa recente para este pet
+            const lastSession = await getLatestChatSessionForPet(foundPet.id);
+            if (lastSession && lastSession.messages.length > 1) {
+              setPreviousSession(lastSession);
+              // Iniciar carregando a última conversa por padrão para continuar de onde parou
+              setSessionId(lastSession.id);
+              setMessages(lastSession.messages.map(m => ({
+                id: m.id,
+                role: m.role,
+                content: m.content
+              })));
+              if (lastSession.triage_level) {
+                setTriageStatus(lastSession.triage_level);
+              }
+            } else {
+              // Iniciar nova triagem com a ficha do pet já injetada
+              const newSessionId = generateUniqueId('session');
+              setSessionId(newSessionId);
+              setMessages([
+                { id: generateUniqueId('msg'), role: 'model', content: buildPetWelcomeMessage(foundPet) }
+              ]);
+            }
+            setIsInitializing(false);
+            return;
+          }
+        }
+
+        // 4. Fluxo padrão sem parâmetros
+        const currentPetRaw = localStorage.getItem('vetpro_current_pet');
+        if (currentPetRaw) {
+          try {
+            const parsed = JSON.parse(currentPetRaw);
+            setSavedPetInfo(parsed);
+          } catch {
+            // Silencioso
+          }
+        }
+
+        const newId = generateUniqueId('session');
+        setSessionId(newId);
+        setMessages([
+          { id: generateUniqueId('msg'), role: 'model', content: DEFAULT_INITIAL_MESSAGE }
+        ]);
+
+      } catch (e) {
+        console.error('Erro ao inicializar chat:', e);
+      } finally {
+        setIsInitializing(false);
+      }
+    }
+
+    initChat();
+  }, [petIdParam, sessionIdParam]);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const handleStartFreshForPet = () => {
+    if (!activePet) return;
+    const newId = generateUniqueId('session');
+    setSessionId(newId);
+    setPreviousSession(null);
+    setTriageStatus('verde');
+    setMessages([
+      { id: generateUniqueId('msg'), role: 'model', content: buildPetWelcomeMessage(activePet) }
+    ]);
+  };
 
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: input.trim() };
-    setMessages(prev => [...prev, userMessage]);
+  const handleResumePreviousSession = () => {
+    if (!previousSession) return;
+    setSessionId(previousSession.id);
+    setMessages(previousSession.messages.map(m => ({
+      id: m.id,
+      role: m.role,
+      content: m.content
+    })));
+    if (previousSession.triage_level) {
+      setTriageStatus(previousSession.triage_level);
+    }
+  };
+
+  const handleSend = async (e?: React.FormEvent, directMessage?: string) => {
+    if (e) e.preventDefault();
+    const textToSend = directMessage || input.trim();
+    if (!textToSend || isLoading) return;
+
+    const userMessage: Message = { id: generateUniqueId('msg'), role: 'user', content: textToSend };
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInput('');
     setIsLoading(true);
 
     try {
+      // Obter documentos RAG para contexto
+      let ragDocs: any[] = [];
+      const customPrompt = localStorage.getItem('vetpro_ai_prompt') || undefined;
+
+      if (isSupabaseConfigured()) {
+        try {
+          const supabase = getSupabaseClient();
+          const { data, error } = await supabase.from('knowledge_base').select('*').limit(5);
+          if (!error && data && data.length > 0) {
+            ragDocs = data.map((d: any) => ({
+              title: d.title || 'Protocolo Clínico',
+              category: d.category || 'Geral',
+              content: d.content || ''
+            }));
+          }
+        } catch (e) {
+          // Fallback para local
+        }
+      }
+
+      if (ragDocs.length === 0) {
+        const savedKb = localStorage.getItem('vetpro_knowledge_base');
+        if (savedKb) ragDocs = JSON.parse(savedKb);
+      }
+
+      // Preparar contexto do pet para a IA (se já tiver um pet selecionado ou salvo)
+      const currentPetContext = activePet || (savedPetInfo?.name ? savedPetInfo : null);
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMessage] })
+        body: JSON.stringify({ 
+          messages: updatedMessages,
+          customPrompt,
+          ragDocs,
+          petContext: currentPetContext
+        })
       });
 
       if (!response.ok) throw new Error('Falha na requisição');
 
       const data = await response.json();
+      const modelMessage: Message = { id: generateUniqueId('msg'), role: 'model', content: data.text };
+      const allNewMessages = [...updatedMessages, modelMessage];
       
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', content: data.text }]);
+      setMessages(allNewMessages);
+
+      if (data.triageLevel) {
+        setTriageStatus(data.triageLevel);
+      }
+
+      // Atualizar dados cadastrais do pet se novos foram extraídos
+      let resolvedPetInfo = currentPetContext;
+      if (data.extractedData) {
+        const ext = data.extractedData;
+        if (ext.petName || ext.tutorName) {
+          const petRecordToSave: Partial<PetRecord> = {
+            id: activePet?.id,
+            name: ext.petName || savedPetInfo?.name || 'Pet em Triagem',
+            tutor_name: ext.tutorName || savedPetInfo?.tutor_name || 'Tutor',
+            species: ext.species || savedPetInfo?.species || 'Cão',
+            breed: ext.breed || savedPetInfo?.breed || 'SRD',
+            sex: ext.sex || savedPetInfo?.sex || 'Não informado',
+            age: ext.age || savedPetInfo?.age || 'Não informada',
+            weight: ext.weight || savedPetInfo?.weight || 'Não informado',
+            symptoms: textToSend
+          };
+
+          resolvedPetInfo = petRecordToSave as PetRecord;
+          setSavedPetInfo(petRecordToSave);
+          setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+          await savePetRecord(petRecordToSave);
+        }
+      }
+
+      // PERSISTÊNCIA AUTOMÁTICA DA SESSÃO DE CHAT E HISTÓRICO
+      const currentSessionId = sessionId || generateUniqueId('session');
+      setSessionId(currentSessionId);
+
+      await saveChatSession(
+        {
+          id: currentSessionId,
+          pet_id: activePet?.id || (resolvedPetInfo as any)?.id,
+          pet_name: resolvedPetInfo?.name || activePet?.name || 'Pet',
+          tutor_name: resolvedPetInfo?.tutor_name || activePet?.tutor_name || 'Tutor',
+          species: resolvedPetInfo?.species || activePet?.species || 'Cão',
+          breed: resolvedPetInfo?.breed || activePet?.breed || 'SRD',
+          sex: resolvedPetInfo?.sex || activePet?.sex || 'Não informado',
+          age: resolvedPetInfo?.age || activePet?.age || 'Não informada',
+          weight: resolvedPetInfo?.weight || activePet?.weight || 'Não informado',
+          triage_level: data.triageLevel || triageStatus,
+          summary: textToSend.length > 70 ? textToSend.substring(0, 67) + '...' : textToSend
+        },
+        allNewMessages
+      );
+
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'model', content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.' }]);
+      setMessages(prev => [
+        ...prev, 
+        { id: generateUniqueId('msg'), role: 'model', content: 'Desculpe, ocorreu um erro ao processar sua mensagem. Verifique a conexão e tente novamente.' }
+      ]);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleResetChat = () => {
+    setActivePet(null);
+    setPreviousSession(null);
+    const newId = generateUniqueId('session');
+    setSessionId(newId);
+    setTriageStatus('verde');
+    setMessages([
+      { id: generateUniqueId('msg'), role: 'model', content: DEFAULT_INITIAL_MESSAGE }
+    ]);
+    setSavedPetInfo(null);
+    setLastSavedTime(null);
+  };
+
+  const quickSymptoms = [
+    'Vômito ou diarreia recente',
+    'Perda de apetite e apatia',
+    'Coceira intensa e feridas na pele',
+    'Mancando ou dor ao apoiar a pata',
+    'Tosse frequente ou espirros'
+  ];
+
+  if (isInitializing) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-brand-bg text-brand-text-muted gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-brand-teal" />
+        <p className="text-sm">Carregando prontuário e histórico de atendimento...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-brand-bg">
-      <div className="h-[76px] px-8 flex items-center border-b border-brand-border-strong bg-brand-surface/30">
+      {/* Header Superior */}
+      <div className="h-[76px] px-6 lg:px-8 flex items-center justify-between border-b border-brand-border-strong bg-brand-surface/40 backdrop-blur-md">
         <div>
-          <h1 className="font-display text-lg font-bold">Triagem IA e Pré-diagnóstico</h1>
-          <p className="text-xs text-brand-text-muted">Aviso: A IA fornece apenas orientações básicas. Casos graves exigem visita à clínica.</p>
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-lg font-bold text-brand-text">Triagem IA e Pré-diagnóstico</h1>
+            
+            {triageStatus === 'vermelho' ? (
+              <span className="bg-red-500/15 text-red-400 text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> Urgência Alta
+              </span>
+            ) : triageStatus === 'amarelo' ? (
+              <span className="bg-amber-500/15 text-amber-400 text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Atenção / Moderado
+              </span>
+            ) : (
+              <span className="bg-brand-teal/15 text-brand-teal text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" /> Protocolo Seguro
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-brand-text-muted">Aviso: A IA fornece orientações preliminares. Casos graves exigem consulta presencial imediata.</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {ragCount > 0 && (
+            <div className="hidden md:flex items-center gap-1.5 bg-brand-surface border border-brand-border-strong px-3 py-1.5 rounded-xl text-xs text-brand-text-muted">
+              <BookOpen className="w-3.5 h-3.5 text-brand-teal" />
+              <span>RAG: <strong className="text-brand-text">{ragCount}</strong> diretrizes</span>
+            </div>
+          )}
+
+          <Link
+            href="/dashboard/historico"
+            className="flex items-center gap-1.5 text-xs text-brand-text-muted hover:text-brand-text bg-brand-surface border border-brand-border-strong hover:border-brand-teal/40 px-3 py-1.5 rounded-xl transition-all"
+            title="Ver histórico de todas as triagens"
+          >
+            <History className="w-3.5 h-3.5 text-brand-teal" />
+            <span className="hidden sm:inline">Histórico de Chats</span>
+          </Link>
+
+          <button
+            onClick={handleResetChat}
+            className="flex items-center gap-1.5 text-xs text-brand-text-muted hover:text-brand-text bg-brand-surface border border-brand-border-strong hover:border-brand-teal/40 px-3 py-1.5 rounded-xl transition-all"
+            title="Iniciar atendimento em branco"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Novo Chat</span>
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      {/* Banner de Contexto de Pet Ativo (Injetado sem necessidade de redigitar dados) */}
+      {activePet && (
+        <div className="px-6 lg:px-8 py-2.5 bg-brand-surface-2/60 border-b border-brand-teal/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="w-7 h-7 rounded-xl bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 text-base">
+              {activePet.species === 'Gato' ? '🐱' : '🐶'}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-brand-text text-sm">{activePet.name}</span>
+              <span className="bg-brand-teal/20 text-brand-teal text-[10px] font-bold px-2 py-0.5 rounded-md">
+                Prontuário Ativo
+              </span>
+              <span className="text-brand-text-muted font-medium">
+                {activePet.species} • {activePet.breed || 'SRD'} • {activePet.sex || 'Sexo n/i'} • {activePet.age || 'Idade n/i'} • {activePet.weight || 'Peso n/i'}
+              </span>
+              {activePet.tutor_name && (
+                <span className="text-brand-teal font-semibold">
+                  (Tutor: {activePet.tutor_name})
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            {previousSession && (
+              <button
+                onClick={handleStartFreshForPet}
+                className="text-[11px] font-bold text-brand-text-muted hover:text-brand-text bg-brand-surface px-2.5 py-1 rounded-lg border border-brand-border-strong hover:border-brand-teal/40 transition-colors"
+                title="Limpar mensagens e começar nova queixa para este mesmo pet"
+              >
+                + Nova Queixa para {activePet.name}
+              </button>
+            )}
+
+            <Link
+              href="/dashboard/pets"
+              className="text-[11px] font-bold text-brand-teal hover:underline flex items-center gap-1"
+            >
+              Ver Ficha Completa
+              <ChevronRight className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Banner / Card de Dados Extraídos e Salvos no Banco (quando gerado via chat geral) */}
+      {!activePet && savedPetInfo && savedPetInfo.name && (
+        <div className="px-6 lg:px-8 py-2.5 bg-brand-teal/10 border-b border-brand-teal/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+              <span className="font-bold text-brand-text flex items-center gap-1">
+                <Database className="w-3 h-3 text-brand-teal" />
+                Dados Identificados:
+              </span>
+              <span className="text-brand-text font-semibold">{savedPetInfo.name}</span>
+              <span className="text-brand-text-muted">•</span>
+              <span className="text-brand-text-muted">{savedPetInfo.species || 'Cão'}</span>
+              {savedPetInfo.breed && <span className="text-brand-text-muted">• {savedPetInfo.breed}</span>}
+              {savedPetInfo.tutor_name && <span className="text-brand-teal font-medium">• Tutor: {savedPetInfo.tutor_name}</span>}
+            </div>
+          </div>
+
+          <Link
+            href="/dashboard/pets"
+            className="flex items-center gap-1 text-brand-teal hover:underline font-bold text-xs shrink-0 self-end md:self-auto"
+          >
+            <Dog className="w-3.5 h-3.5" />
+            Ver na Lista de Pets
+            <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+      )}
+
+      {/* Área de Mensagens */}
+      <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-4 max-w-3xl ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-brand-surface-2' : 'bg-brand-teal/20 text-brand-teal'}`}>
               {msg.role === 'user' ? <User className="w-4 h-4 text-brand-text-muted" /> : <Bot className="w-4 h-4" />}
             </div>
-            <div className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-brand-surface-2 border border-brand-border-strong' : 'bg-brand-surface border border-brand-border-strong'}`}>
-              {msg.content}
+            <div className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed ${msg.role === 'user' ? 'bg-brand-surface-2 border border-brand-border-strong text-brand-text' : 'bg-brand-surface border border-brand-border-strong text-brand-text shadow-sm'}`}>
+              <FormattedText text={msg.content} />
             </div>
           </div>
         ))}
+
         {isLoading && (
           <div className="flex gap-4 max-w-3xl">
             <div className="w-8 h-8 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0">
               <Loader2 className="w-4 h-4 animate-spin" />
             </div>
-            <div className="px-5 py-3.5 rounded-2xl bg-brand-surface border border-brand-border-strong text-brand-text-muted text-sm flex items-center">
-              Analisando sintomas...
+            <div className="px-5 py-3.5 rounded-2xl bg-brand-surface border border-brand-border-strong text-brand-text-muted text-sm flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-brand-teal animate-pulse" />
+              <span>Analisando quadro clínico e atualizando histórico...</span>
             </div>
           </div>
         )}
         <div ref={endOfMessagesRef} />
       </div>
 
+      {/* Sugestões Rápidas (Chips) se houver pet selecionado e poucas mensagens */}
+      {activePet && messages.length <= 3 && !isLoading && (
+        <div className="px-6 lg:px-8 py-2 bg-brand-surface/30 border-t border-brand-border-strong/50 overflow-x-auto flex items-center gap-2">
+          <span className="text-[11px] font-bold text-brand-text-muted shrink-0">Sugestões rápidas:</span>
+          {quickSymptoms.map((symptom, idx) => (
+            <button
+              key={idx}
+              onClick={() => handleSend(undefined, symptom)}
+              className="bg-brand-surface border border-brand-border-strong hover:border-brand-teal/50 hover:bg-brand-teal/10 text-brand-text text-xs px-3 py-1.5 rounded-full shrink-0 transition-all font-medium"
+            >
+              {symptom}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Input de Mensagem */}
       <div className="p-6 bg-brand-surface/50 border-t border-brand-border-strong">
         <form onSubmit={handleSend} className="max-w-4xl mx-auto relative">
           <input 
             type="text" 
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Descreva o que está acontecendo com o pet..."
+            placeholder={
+              activePet 
+                ? `Descreva os sintomas, tempo de evolução ou queixa do(a) ${activePet.name}...` 
+                : "Responda os dados do pet ou descreva os sintomas observados..."
+            }
             disabled={isLoading}
-            className="w-full bg-brand-bg border border-brand-border-strong rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:border-brand-accent transition-colors disabled:opacity-50 text-[15px]"
+            className="w-full bg-brand-bg border border-brand-border-strong rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:border-brand-teal transition-colors disabled:opacity-50 text-[15px]"
           />
           <button 
             type="submit" 
             disabled={!input.trim() || isLoading}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-brand-accent/20 text-brand-accent-2 flex items-center justify-center hover:bg-brand-accent/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-brand-teal text-brand-bg flex items-center justify-center hover:bg-brand-teal/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+            title="Enviar mensagem"
           >
             <Send className="w-4 h-4 ml-0.5" />
           </button>
         </form>
       </div>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full bg-brand-bg">
+        <Loader2 className="w-8 h-8 animate-spin text-brand-teal" />
+      </div>
+    }>
+      <ChatContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "VetPro Orienta",
+  "description": "Plataforma multi-tenant de orientação veterinária com IA e painéis para tutores, clínicas e super admin",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
