@@ -1,10 +1,11 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import { useState, useRef, useEffect, Suspense } from 'react';
 import { 
   Send, Bot, User, Loader2, BookOpen, ShieldCheck, 
   CheckCircle2, Sparkles, Database, ArrowRight, RefreshCw, Dog,
-  History, AlertTriangle, AlertCircle, MessageSquare, ChevronRight, CornerDownLeft
+  History, AlertTriangle, AlertCircle, MessageSquare, ChevronRight, CornerDownLeft, Image as ImageIcon
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -20,6 +21,7 @@ type Message = {
   id: string;
   role: 'user' | 'model';
   content: string;
+  image?: string;
 };
 
 const DEFAULT_INITIAL_MESSAGE = `Olá! Sou o assistente de triagem e pré-diagnóstico do *VetPro Orienta*. 
@@ -72,8 +74,27 @@ function ChatContent() {
   const [savedPetInfo, setSavedPetInfo] = useState<Partial<PetRecord> | null>(null);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
   const [triageStatus, setTriageStatus] = useState<'verde' | 'amarelo' | 'vermelho'>('verde');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('A imagem é muito grande. O tamanho máximo permitido é 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setSelectedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    if (e.target) e.target.value = '';
+  };
 
   // Inicialização inteligente do Chat com base em petId ou sessionId
   useEffect(() => {
@@ -224,12 +245,19 @@ function ChatContent() {
   const handleSend = async (e?: React.FormEvent, directMessage?: string) => {
     if (e) e.preventDefault();
     const textToSend = directMessage || input.trim();
-    if (!textToSend || isLoading) return;
+    const imageToSend = selectedImage;
+    if ((!textToSend && !imageToSend) || isLoading) return;
 
-    const userMessage: Message = { id: generateUniqueId('msg'), role: 'user', content: textToSend };
+    const userMessage: Message = { 
+      id: generateUniqueId('msg'), 
+      role: 'user', 
+      content: textToSend || 'Analise esta imagem em relação ao quadro clínico do pet.',
+      image: imageToSend || undefined
+    };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput('');
+    setSelectedImage(null);
     setIsLoading(true);
 
     try {
@@ -507,6 +535,11 @@ function ChatContent() {
               {msg.role === 'user' ? <User className="w-4 h-4 text-brand-text-muted" /> : <Bot className="w-4 h-4" />}
             </div>
             <div className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed ${msg.role === 'user' ? 'bg-brand-surface-2 border border-brand-border-strong text-brand-text' : 'bg-brand-surface border border-brand-border-strong text-brand-text shadow-sm'}`}>
+              {msg.image && (
+                <div className="mb-3">
+                  <img src={msg.image} alt="Foto anexada pelo tutor" className="max-w-xs max-h-60 rounded-xl object-cover border border-brand-border-strong shadow-sm" />
+                </div>
+              )}
               <FormattedText text={msg.content} />
             </div>
           </div>
@@ -519,7 +552,7 @@ function ChatContent() {
             </div>
             <div className="px-5 py-3.5 rounded-2xl bg-brand-surface border border-brand-border-strong text-brand-text-muted text-sm flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-brand-teal animate-pulse" />
-              <span>Analisando quadro clínico e atualizando histórico...</span>
+              <span>Analisando quadro clínico e imagem...</span>
             </div>
           </div>
         )}
@@ -544,27 +577,64 @@ function ChatContent() {
 
       {/* Input de Mensagem */}
       <div className="p-6 bg-brand-surface/50 border-t border-brand-border-strong">
-        <form onSubmit={handleSend} className="max-w-4xl mx-auto relative">
+        {selectedImage && (
+          <div className="max-w-4xl mx-auto mb-3 flex items-center gap-3 p-2.5 bg-brand-surface border border-brand-border-strong rounded-xl w-fit shadow-sm">
+            <img src={selectedImage} alt="Preview" className="w-12 h-12 object-cover rounded-lg border border-brand-border-strong" />
+            <div className="text-xs">
+              <p className="font-bold text-brand-text">Foto anexada para análise</p>
+              <p className="text-brand-text-muted">A IA vai avaliar esta imagem junto com a mensagem</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedImage(null)}
+              className="ml-3 w-6 h-6 rounded-full bg-brand-surface-2 hover:bg-red-500/20 text-brand-text-muted hover:text-red-400 flex items-center justify-center text-xs transition-colors"
+              title="Remover imagem"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleSend} className="max-w-4xl mx-auto relative flex items-center gap-2">
           <input 
-            type="text" 
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={
-              activePet 
-                ? `Descreva os sintomas, tempo de evolução ou queixa do(a) ${activePet.name}...` 
-                : "Responda os dados do pet ou descreva os sintomas observados..."
-            }
-            disabled={isLoading}
-            className="w-full bg-brand-bg border border-brand-border-strong rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:border-brand-teal transition-colors disabled:opacity-50 text-[15px]"
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImageSelect}
+            accept="image/*"
+            className="hidden"
           />
-          <button 
-            type="submit" 
-            disabled={!input.trim() || isLoading}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-brand-teal text-brand-bg flex items-center justify-center hover:bg-brand-teal/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-            title="Enviar mensagem"
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-12 h-12 rounded-full bg-brand-surface border border-brand-border-strong hover:border-brand-teal text-brand-text-muted hover:text-brand-teal flex items-center justify-center shrink-0 transition-colors shadow-sm"
+            title="Enviar foto ou exame para análise da IA"
+            disabled={isLoading}
           >
-            <Send className="w-4 h-4 ml-0.5" />
+            <ImageIcon className="w-5 h-5" />
           </button>
+
+          <div className="relative flex-1">
+            <input 
+              type="text" 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={
+                activePet 
+                  ? `Descreva os sintomas ou envie foto/exame do(a) ${activePet.name}...` 
+                  : "Descreva os sintomas ou envie uma foto para análise..."
+              }
+              disabled={isLoading}
+              className="w-full bg-brand-bg border border-brand-border-strong rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:border-brand-teal transition-colors disabled:opacity-50 text-[15px]"
+            />
+            <button 
+              type="submit" 
+              disabled={(!input.trim() && !selectedImage) || isLoading}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-brand-teal text-brand-bg flex items-center justify-center hover:bg-brand-teal/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+              title="Enviar mensagem"
+            >
+              <Send className="w-4 h-4 ml-0.5" />
+            </button>
+          </div>
         </form>
       </div>
     </div>

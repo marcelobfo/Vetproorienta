@@ -211,12 +211,38 @@ Você JÁ POSSUI todos os dados cadastrais deste pet. NUNCA peça para o tutor d
       systemInstruction += `\n\n[BIBLIOGRAFIA E BASE DE CONHECIMENTO CLÍNICO RAG OFICIAL DA CLÍNICA]:\nUtilize rigorosamente como fonte de verdade médica e científica os seguintes protocolos e diretrizes:\n${ragContext}`;
     }
 
-    const formattedHistory = messages.slice(0, -1).map((m: any) => ({
-      role: m.role,
-      parts: [{ text: m.content }]
-    }));
+    const formattedHistory = messages.slice(0, -1).map((m: any) => {
+      const parts: any[] = [{ text: m.content || '' }];
+      if (m.image) {
+        const matches = m.image.match(/^data:(.+);base64,(.+)$/);
+        if (matches) {
+          parts.push({
+            inlineData: {
+              mimeType: matches[1],
+              data: matches[2]
+            }
+          });
+        }
+      }
+      return {
+        role: m.role,
+        parts
+      };
+    });
 
     const lastMessage = messages[messages.length - 1];
+    const lastParts: any[] = [{ text: lastMessage.content || '' }];
+    if (lastMessage.image) {
+      const matches = lastMessage.image.match(/^data:(.+);base64,(.+)$/);
+      if (matches) {
+        lastParts.push({
+          inlineData: {
+            mimeType: matches[1],
+            data: matches[2]
+          }
+        });
+      }
+    }
 
     const chat = ai.chats.create({
       model: finalModel || "gemini-2.5-flash",
@@ -227,7 +253,7 @@ Você JÁ POSSUI todos os dados cadastrais deste pet. NUNCA peça para o tutor d
       history: formattedHistory
     });
 
-    const response = await chat.sendMessage({ message: lastMessage.content });
+    const response = await chat.sendMessage({ message: lastParts.length > 1 ? lastParts : lastMessage.content });
     
     // Normalizar todo o texto gerado para ter apenas * em negrito
     const cleanText = formatSingleAsteriskBold(response.text || '');

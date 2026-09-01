@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import { useState, useEffect } from 'react';
 import { 
@@ -8,8 +9,13 @@ import {
   AlertCircle, Phone, Syringe, Send, Check
 } from 'lucide-react';
 import Link from 'next/link';
-import { getSavedPets, savePetRecord, deletePetRecord, PetRecord, getPetVaccines, PetVaccineRecord } from '@/lib/petService';
+import { 
+  getSavedPets, savePetRecord, deletePetRecord, PetRecord, 
+  getPetVaccines, PetVaccineRecord, getOrphanPetsFromHistory, restorePetFromHistory 
+} from '@/lib/petService';
 import { VaccinationCardModal } from '@/components/VaccinationCardModal';
+import { SecurityDeleteModal } from '@/components/SecurityDeleteModal';
+import { History, ArrowRight } from 'lucide-react';
 
 export default function PetsPage() {
   const [pets, setPets] = useState<PetRecord[]>([]);
@@ -17,6 +23,15 @@ export default function PetsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSpecies, setSelectedSpecies] = useState<'all' | 'Cão' | 'Gato'>('all');
   
+  // Orphan Pets Recovery (Pets in chat history not yet in pets table)
+  const [orphanPets, setOrphanPets] = useState<Array<{
+    suggestedPet: Partial<PetRecord>;
+    sessionCount: number;
+    latestSessionId: string;
+    latestTriageAt: string;
+  }>>([]);
+  const [restoringPet, setRestoringPet] = useState<string | null>(null);
+
   // Caderneta de Vacinação Modal State
   const [vaccineModalPet, setVaccineModalPet] = useState<PetRecord | null>(null);
 
@@ -33,9 +48,21 @@ export default function PetsPage() {
     age: '',
     weight: '',
     notes: '',
+    image_url: '',
   });
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Modal Exclusão Segura
+  const [deleteModalState, setDeleteModalState] = useState<{
+    isOpen: boolean;
+    petId: string;
+    petName: string;
+  }>({
+    isOpen: false,
+    petId: '',
+    petName: '',
+  });
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -46,6 +73,8 @@ export default function PetsPage() {
     try {
       const data = await getSavedPets();
       setPets(data);
+      const orphans = await getOrphanPetsFromHistory();
+      setOrphanPets(orphans);
     } catch (e) {
       console.error('Erro ao carregar pets:', e);
     } finally {
@@ -55,9 +84,10 @@ export default function PetsPage() {
 
   useEffect(() => {
     let isMounted = true;
-    getSavedPets().then((data) => {
+    Promise.all([getSavedPets(), getOrphanPetsFromHistory()]).then(([data, orphans]) => {
       if (isMounted) {
         setPets(data);
+        setOrphanPets(orphans);
         setLoading(false);
       }
     }).catch(() => {
@@ -68,6 +98,24 @@ export default function PetsPage() {
       isMounted = false;
     };
   }, []);
+
+  const handleRestoreOrphanPet = async (suggestedPet: Partial<PetRecord>, sessionId?: string) => {
+    const petName = suggestedPet.name || 'Pet';
+    setRestoringPet(petName);
+    try {
+      const res = await restorePetFromHistory(suggestedPet, sessionId);
+      if (res.success) {
+        showToast(`Pet "${petName}" recuperado e vinculado com sucesso!`);
+        await loadPets();
+      } else {
+        showToast(res.error || `Erro ao recuperar ${petName}`);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao recuperar pet.');
+    } finally {
+      setRestoringPet(null);
+    }
+  };
 
   const handleOpenAddModal = () => {
     const savedTutorName = typeof window !== 'undefined' ? localStorage.getItem('vetpro_tutor_name') || '' : '';
@@ -83,6 +131,7 @@ export default function PetsPage() {
       age: '',
       weight: '',
       notes: '',
+    image_url: '',
     });
     setIsModalOpen(true);
   };
@@ -99,6 +148,7 @@ export default function PetsPage() {
       age: pet.age || '',
       weight: pet.weight || '',
       notes: pet.notes || '',
+      image_url: pet.image_url || '',
     });
     setIsModalOpen(true);
   };
@@ -119,12 +169,24 @@ export default function PetsPage() {
         sex: formData.sex,
         age: formData.age.trim() || 'Não informada',
         weight: formData.weight.trim() || 'Não informado',
-        notes: formData.notes.trim()
+        notes: formData.notes.trim(),
+        image_url: formData.image_url.trim()
       });
 
       if (result.success) {
         showToast(editingPet ? 'Pet atualizado com sucesso no banco de dados!' : 'Pet cadastrado com sucesso no banco de dados!');
         setIsModalOpen(false);
+        if (result.data) {
+          setPets(prev => {
+            const idx = prev.findIndex(p => p.id === result.data!.id);
+            if (idx >= 0) {
+              const clone = [...prev];
+              clone[idx] = result.data!;
+              return clone;
+            }
+            return [result.data!, ...prev];
+          });
+        }
         await loadPets();
       } else {
         alert(result.error || 'Erro ao salvar pet.');
@@ -136,11 +198,22 @@ export default function PetsPage() {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (confirm(`Tem certeza que deseja remover o cadastro de ${name} e sua caderneta de vacinação?`)) {
-      await deletePetRecord(id);
-      showToast(`${name} removido com sucesso.`);
+  const handleDelete = (id: string, name: string) => {
+    setDeleteModalState({
+      isOpen: true,
+      petId: id,
+      petName: name
+    });
+  };
+
+  const handleConfirmDeletePet = async () => {
+    if (!deleteModalState.petId) return;
+    const ok = await deletePetRecord(deleteModalState.petId, deleteModalState.petName);
+    if (ok) {
+      showToast(`${deleteModalState.petName} removido com sucesso.`);
       await loadPets();
+    } else {
+      showToast('Erro ao remover pet do banco de dados.');
     }
   };
 
@@ -251,6 +324,63 @@ export default function PetsPage() {
           </div>
         </div>
 
+        {/* Banner de Recuperação Inteligente de Pets do Histórico (Ex: Cão Pepa) */}
+        {orphanPets.length > 0 && (
+          <div className="mb-6 bg-gradient-to-r from-amber-500/10 via-brand-surface to-brand-surface border border-amber-500/30 rounded-2xl p-5 shadow-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-sm text-brand-text">
+                      {orphanPets.length === 1 ? 'Pet Identificado no Histórico de Consultas' : 'Pets Identificados no Histórico de Consultas'}
+                    </h3>
+                    <span className="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      Recuperação Disponível
+                    </span>
+                  </div>
+                  <p className="text-xs text-brand-text-muted mt-1 leading-relaxed">
+                    Identificamos atendimentos e triagens anteriores realizadas para pets que ainda não possuem cadastro oficial em &quot;Meus Pets&quot;.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                {orphanPets.map((orphan) => {
+                  const petName = orphan.suggestedPet.name || 'Pet';
+                  return (
+                    <div 
+                      key={orphan.latestSessionId || petName}
+                      className="flex items-center gap-2 bg-brand-surface-2 border border-brand-border-strong px-3 py-2 rounded-xl"
+                    >
+                      <div className="text-xs">
+                        <span className="font-bold text-brand-text">🐾 {petName}</span>
+                        <span className="text-[10px] text-brand-text-muted ml-1.5 font-mono">
+                          ({orphan.sessionCount} {orphan.sessionCount === 1 ? 'atendimento' : 'atendimentos'})
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRestoreOrphanPet(orphan.suggestedPet, orphan.latestSessionId)}
+                        disabled={restoringPet === petName}
+                        className="bg-brand-teal text-brand-bg text-xs font-bold px-3 py-1 rounded-lg hover:bg-brand-teal/90 transition-all flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {restoringPet === petName ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                        <span>Vincular aos Meus Pets</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Grid de Pets */}
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center gap-3 text-brand-text-muted">
@@ -294,8 +424,12 @@ export default function PetsPage() {
                   {/* Topo do Card */}
                   <div className="flex items-start justify-between gap-3 mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-brand-surface-2 border border-brand-border-strong flex items-center justify-center text-2xl group-hover:scale-105 transition-transform">
-                        {pet.species === 'Gato' ? '🐱' : '🐶'}
+                      <div className="w-12 h-12 rounded-2xl bg-brand-surface-2 border border-brand-border-strong flex items-center justify-center text-2xl group-hover:scale-105 transition-transform overflow-hidden shrink-0">
+                        {pet.image_url ? (
+                          <img src={pet.image_url} alt={pet.name} className="w-full h-full object-cover" />
+                        ) : (
+                          pet.species === 'Gato' ? '🐱' : '🐶'
+                        )}
                       </div>
                       <div>
                         <h3 className="font-display font-bold text-lg text-brand-text">{pet.name}</h3>
@@ -411,6 +545,20 @@ export default function PetsPage() {
           </div>
         )}
       </div>
+
+      {/* Modal de Exclusão Segura com Auditoria */}
+      <SecurityDeleteModal
+        isOpen={deleteModalState.isOpen}
+        onClose={() => setDeleteModalState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={handleConfirmDeletePet}
+        itemName={deleteModalState.petName}
+        itemType="Pet"
+        impactWarnings={[
+          'A caderneta de vacinas deste pet e o histórico de doses serão apagados.',
+          'Os prontuários e receitas vinculados a este pet perderão a associação.',
+          'Esta ação será registrada no log de auditoria do sistema.'
+        ]}
+      />
 
       {/* Modal de Caderneta de Vacinação Digital do Pet */}
       {vaccineModalPet && (
@@ -546,6 +694,39 @@ export default function PetsPage() {
                     onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
                     className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-brand-teal"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-brand-text-muted mb-1">Foto de Perfil do Pet (Opcional)</label>
+                <div className="flex items-center gap-3">
+                  {formData.image_url && (
+                    <img src={formData.image_url} alt="Preview" className="w-12 h-12 rounded-xl object-cover border border-brand-border-strong shrink-0" />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          setFormData({ ...formData, image_url: reader.result as string });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="w-full text-xs text-brand-text-muted file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-brand-surface-2 file:text-brand-teal hover:file:bg-brand-teal/15 cursor-pointer bg-brand-bg border border-brand-border-strong rounded-xl"
+                  />
+                  {formData.image_url && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, image_url: '' })}
+                      className="text-xs text-red-400 hover:text-red-500 font-bold shrink-0"
+                    >
+                      Remover
+                    </button>
+                  )}
                 </div>
               </div>
 

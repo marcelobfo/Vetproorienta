@@ -3,32 +3,85 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { checkTutorSubscriptionStatus, verifyAndUnlockSubscription } from '@/lib/asaas';
+import { isModuleActive, SYSTEM_MODULE_KEYS } from '@/lib/moduleService';
 import {
   MessageSquare, CreditCard, Activity, TerminalSquare,
   Package, LogOut, User, Dog, History, Shield, Zap,
   BrainCircuit, Users, Globe, ChevronDown, Check, Smartphone, 
-  AlertTriangle, QrCode, Copy, CheckCircle2, RefreshCw, ExternalLink, Lock, FileText
+  AlertTriangle, QrCode, Copy, CheckCircle2, RefreshCw, ExternalLink, Lock, FileText,
+  MapPin, UserCheck, Building
 } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [role, setRole] = useState<'tutor' | 'admin' | 'super_admin'>('tutor');
-  const [activeView, setActiveView] = useState<'tutor' | 'admin' | 'super_admin'>('super_admin');
-  const [profileName, setProfileName] = useState('Carregando...');
-  const [userEmail, setUserEmail] = useState('');
-  const [planName, setPlanName] = useState('Essencial');
+  const [role, setRole] = useState<'tutor' | 'admin' | 'super_admin'>(() => {
+    if (typeof window !== 'undefined') {
+      const localRole = localStorage.getItem('vetpro_user_role');
+      if (localRole === 'super_admin' || localRole === 'admin' || localRole === 'tutor') return localRole;
+    }
+    return 'tutor';
+  });
+  const [profileName, setProfileName] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vetpro_tutor_name') || 'Tutor Conectado';
+    }
+    return 'Tutor Conectado';
+  });
+  const [userEmail, setUserEmail] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vetpro_user_email') || '';
+    }
+    return '';
+  });
+  const [planName, setPlanName] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const plan = localStorage.getItem('vetpro_selected_plan');
+      return plan === 'especialista' ? 'Especialista' : 'Essencial';
+    }
+    return 'Essencial';
+  });
   const [loading, setLoading] = useState(true);
-  const [hasActivePlan, setHasActivePlan] = useState(false);
+  const [hasActivePlan, setHasActivePlan] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return checkTutorSubscriptionStatus().hasActivePlan;
+    }
+    return false;
+  });
   
   // Payment states for locked modal
-  const [customerId, setCustomerId] = useState('');
-  const [subscriptionId, setSubscriptionId] = useState('');
-  const [paymentUrl, setPaymentUrl] = useState('');
+  const [customerId, setCustomerId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vetpro_asaas_customer_id') || '';
+    }
+    return '';
+  });
+  const [subscriptionId, setSubscriptionId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vetpro_asaas_subscription_id') || '';
+    }
+    return '';
+  });
+  const [paymentUrl, setPaymentUrl] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vetpro_payment_url') || '';
+    }
+    return '';
+  });
   const [bankSlipUrl, setBankSlipUrl] = useState('');
   const [identificationField, setIdentificationField] = useState('');
-  const [pixQrCode, setPixQrCode] = useState('');
-  const [pixCopiaECola, setPixCopiaECola] = useState('');
+  const [pixQrCode, setPixQrCode] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vetpro_pix_qrcode') || '';
+    }
+    return '';
+  });
+  const [pixCopiaECola, setPixCopiaECola] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vetpro_pix_copia_cola') || '';
+    }
+    return '';
+  });
   const [paymentModalTab, setPaymentModalTab] = useState<'pix' | 'card' | 'boleto'>('pix');
   const [isCopied, setIsCopied] = useState(false);
   const [isCopiedBoleto, setIsCopiedBoleto] = useState(false);
@@ -39,44 +92,44 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
 
+  // Active View derived directly from current pathname and verified role
+  const activeView: 'tutor' | 'admin' | 'super_admin' = (() => {
+    if (role === 'super_admin') {
+      if (pathname.startsWith('/dashboard/admin')) return 'admin';
+      if (pathname.startsWith('/dashboard/super')) return 'super_admin';
+      return 'tutor';
+    }
+    if (role === 'admin') {
+      if (pathname.startsWith('/dashboard/admin')) return 'admin';
+      return 'tutor';
+    }
+    return 'tutor';
+  })();
+
+  // 1. Session & Profile Initialization on Mount
   useEffect(() => {
     let isMounted = true;
 
-    async function initSession() {
-      const { data: { session } } = await supabase.auth.getSession();
+    async function processSession(session: any) {
       if (!isMounted) return;
 
-      // Check local storage fallback values
-      const localPlan = typeof window !== 'undefined' ? localStorage.getItem('vetpro_selected_plan') : null;
-      const localCustId = typeof window !== 'undefined' ? localStorage.getItem('vetpro_asaas_customer_id') : null;
-      const localSubId = typeof window !== 'undefined' ? localStorage.getItem('vetpro_asaas_subscription_id') : null;
-      const localPayUrl = typeof window !== 'undefined' ? localStorage.getItem('vetpro_payment_url') : null;
-      const localPixQr = typeof window !== 'undefined' ? localStorage.getItem('vetpro_pix_qrcode') : null;
-      const localPixCode = typeof window !== 'undefined' ? localStorage.getItem('vetpro_pix_copia_cola') : null;
-      
-      if (localCustId) setCustomerId(localCustId);
-      if (localSubId) setSubscriptionId(localSubId);
-      if (localPayUrl) setPaymentUrl(localPayUrl);
-      if (localPixQr) setPixQrCode(localPixQr);
-      if (localPixCode) setPixCopiaECola(localPixCode);
-      if (localPlan) setPlanName(localPlan === 'especialista' ? 'Especialista' : 'Essencial');
-
-      if (!session) {
-        if (pathname.startsWith('/dashboard/super') || pathname.startsWith('/dashboard/admin')) {
-          router.push('/login');
-          return;
-        }
-        setProfileName('Tutor Conectado');
-        setRole('tutor');
-        setActiveView('tutor');
+      if (!session?.user) {
+        // Tutor visitante ou sem login prévio
         const subStatus = checkTutorSubscriptionStatus();
         setHasActivePlan(subStatus.hasActivePlan);
+        const localName = typeof window !== 'undefined' ? localStorage.getItem('vetpro_tutor_name') : null;
+        setProfileName(localName || 'Tutor Conectado');
+        setRole('tutor');
         setLoading(false);
         return;
       }
 
       const email = session.user.email?.toLowerCase() || '';
       setUserEmail(email);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vetpro_user_email', email);
+      }
+
       const isSuperAdminEmail = email === 'marcelobfo@gmail.com' || email.includes('admin@vetpro');
 
       try {
@@ -90,36 +143,61 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         if (profile?.role === 'super_admin' || isSuperAdminEmail) {
           setRole('super_admin');
-          setActiveView(pathname.startsWith('/dashboard/admin') ? 'admin' : (pathname === '/dashboard' || pathname.startsWith('/dashboard/chat') || pathname.startsWith('/dashboard/pets')) ? 'tutor' : 'super_admin');
           setProfileName(profile?.full_name || 'Marcelo (Super Admin)');
           setHasActivePlan(true);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('vetpro_user_role', 'super_admin');
+            localStorage.setItem('vetpro_tutor_name', profile?.full_name || 'Marcelo');
+          }
         } else if (profile?.role === 'admin' || profile?.role === 'veterinario') {
           setRole('admin');
-          setActiveView(pathname.startsWith('/dashboard/admin') ? 'admin' : 'tutor');
           setProfileName(profile?.full_name || 'Veterinário / Administrador');
           setHasActivePlan(true);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('vetpro_user_role', 'admin');
+            localStorage.setItem('vetpro_tutor_name', profile?.full_name || 'Veterinário');
+          }
         } else {
           setRole('tutor');
-          setActiveView('tutor');
-          setProfileName(profile?.full_name || email.split('@')[0] || 'Tutor');
+          const resolvedName = profile?.full_name || email.split('@')[0] || 'Tutor';
+          setProfileName(resolvedName);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('vetpro_user_role', 'tutor');
+            localStorage.setItem('vetpro_tutor_name', resolvedName);
+          }
           
           if (profile?.plan_name) setPlanName(profile.plan_name);
           if (profile?.asaas_customer_id) setCustomerId(profile.asaas_customer_id);
           if (profile?.subscription_id) setSubscriptionId(profile.subscription_id);
 
-          const isPlanActive = profile?.subscription_status === 'ACTIVE' || profile?.subscription_status === 'CONFIRMED' || profile?.subscription_status === 'RECEIVED';
+          const subStatus = checkTutorSubscriptionStatus();
+          const isDbActive = profile?.subscription_status === 'ACTIVE' || profile?.subscription_status === 'CONFIRMED' || profile?.subscription_status === 'RECEIVED';
+          const isPlanActive = isDbActive || subStatus.hasActivePlan;
           setHasActivePlan(isPlanActive);
+
+          // Sincronizar status de pagamento
+          if (isDbActive && !subStatus.hasActivePlan) {
+            localStorage.setItem('vetpro_subscription_status', 'ACTIVE');
+            localStorage.setItem('vetpro_subscription_paid', 'true');
+            if (!localStorage.getItem('vetpro_subscription_created_at')) {
+              localStorage.setItem('vetpro_subscription_created_at', new Date().toISOString());
+            }
+          } else if (subStatus.hasActivePlan && !isDbActive && isSupabaseConfigured()) {
+            void supabase.from('user_profiles').update({
+              subscription_status: 'ACTIVE',
+              status: 'active',
+              updated_at: new Date().toISOString()
+            }).eq('id', session.user.id);
+          }
         }
       } catch {
         if (!isMounted) return;
         if (isSuperAdminEmail) {
           setRole('super_admin');
-          setActiveView('super_admin');
           setProfileName('Marcelo (Super Admin)');
           setHasActivePlan(true);
         } else {
           setRole('tutor');
-          setActiveView('tutor');
           setProfileName(email.split('@')[0] || 'Tutor');
           const subStatus = checkTutorSubscriptionStatus();
           setHasActivePlan(subStatus.hasActivePlan);
@@ -131,11 +209,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
     }
 
+    async function initSession() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await processSession(session);
+      } catch (err) {
+        console.warn('[DashboardLayout] Erro ao carregar sessão:', err);
+        if (isMounted) setLoading(false);
+      }
+    }
+
     void initSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') {
-        router.push('/login');
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (!isMounted) return;
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        void processSession(newSession);
       }
     });
 
@@ -143,7 +232,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       isMounted = false;
       authListener.subscription.unsubscribe();
     };
-  }, [pathname, router]);
+  }, []);
+
+  // 2. Protege rotas restritas se o tutor tentar acessar via URL direta
+  useEffect(() => {
+    if (!loading && role === 'tutor' && (pathname.startsWith('/dashboard/super') || pathname.startsWith('/dashboard/admin'))) {
+      router.push('/dashboard');
+    }
+  }, [pathname, role, loading, router]);
 
   // Auto-render Pix QR code whenever payload is present
   useEffect(() => {
@@ -284,23 +380,45 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignora erro eventual de rede
+    }
     if (typeof window !== 'undefined') {
+      localStorage.removeItem('vetpro_user_role');
+      localStorage.removeItem('vetpro_user_email');
+      localStorage.removeItem('vetpro_tutor_name');
       localStorage.removeItem('vetpro_subscription_status');
     }
     router.push('/login');
   };
 
+  const [isPartnersModuleEnabled, setIsPartnersModuleEnabled] = useState<boolean>(() => {
+    return isModuleActive(SYSTEM_MODULE_KEYS.PARCEIROS_GPS);
+  });
+
+  useEffect(() => {
+    const handleModulesUpdate = () => {
+      setIsPartnersModuleEnabled(isModuleActive(SYSTEM_MODULE_KEYS.PARCEIROS_GPS));
+    };
+    window.addEventListener('vetpro_modules_changed', handleModulesUpdate);
+    return () => window.removeEventListener('vetpro_modules_changed', handleModulesUpdate);
+  }, []);
+
   const tutorNavItems = [
     { name: 'Início do Tutor', href: '/dashboard', icon: User },
     { name: 'Triagem AI (Chat)', href: '/dashboard/chat', icon: MessageSquare },
     { name: 'Meus Pets', href: '/dashboard/pets', icon: Dog },
+    ...(isPartnersModuleEnabled ? [{ name: 'Rede de Parceiros & GPS', href: '/dashboard/parceiros', icon: MapPin }] : []),
     { name: 'Histórico', href: '/dashboard/historico', icon: History },
     { name: 'Assinatura & Faturas', href: '/dashboard/assinatura', icon: CreditCard },
   ];
 
   const adminNavItems = [
     { name: 'Visão Geral (Clínica)', href: '/dashboard/admin', icon: Activity },
+    { name: 'Central de Cadastros', href: '/dashboard/admin/cadastros', icon: UserCheck },
+    ...(isPartnersModuleEnabled ? [{ name: 'Rede de Parceiros', href: '/dashboard/parceiros', icon: MapPin }] : []),
     { name: 'WhatsApp & Evolution', href: '/dashboard/admin/whatsapp', icon: Smartphone },
     { name: 'Asaas & Pagamentos', href: '/dashboard/admin/asaas', icon: CreditCard },
     { name: 'Usuários & Permissões', href: '/dashboard/admin/usuarios', icon: Users },
@@ -311,7 +429,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const superAdminNavItems = [
     { name: 'Painel Global', href: '/dashboard/super', icon: Globe },
+    { name: 'Central de Cadastros', href: '/dashboard/admin/cadastros', icon: UserCheck },
     { name: 'Todas as Clínicas (Tenants)', href: '/dashboard/super/tenants', icon: Package },
+    { 
+      name: isPartnersModuleEnabled ? 'Rede de Parceiros & GPS' : 'Rede de Parceiros (Pausado)', 
+      href: '/dashboard/parceiros', 
+      icon: MapPin 
+    },
     { name: 'WhatsApp & Evolution', href: '/dashboard/admin/whatsapp', icon: Smartphone },
     { name: 'Asaas & Pagamentos', href: '/dashboard/admin/asaas', icon: CreditCard },
     { name: 'Usuários do Sistema', href: '/dashboard/admin/usuarios', icon: Users },
@@ -358,10 +482,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="grid grid-cols-1 gap-1">
               {role === 'super_admin' && (
                 <button
-                  onClick={() => {
-                    setActiveView('super_admin');
-                    router.push('/dashboard/super');
-                  }}
+                  onClick={() => router.push('/dashboard/super')}
                   className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     activeView === 'super_admin' 
                       ? 'bg-brand-teal text-brand-bg shadow-sm' 
@@ -374,10 +495,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
               
               <button
-                onClick={() => {
-                  setActiveView('admin');
-                  router.push('/dashboard/admin');
-                }}
+                onClick={() => router.push('/dashboard/admin')}
                 className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   activeView === 'admin' 
                     ? 'bg-brand-teal text-brand-bg shadow-sm' 
@@ -389,10 +507,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </button>
 
               <button
-                onClick={() => {
-                  setActiveView('tutor');
-                  router.push('/dashboard');
-                }}
+                onClick={() => router.push('/dashboard')}
                 className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   activeView === 'tutor' 
                     ? 'bg-brand-teal text-brand-bg shadow-sm' 

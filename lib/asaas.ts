@@ -660,6 +660,7 @@ export function broadcastSubscriptionUnlock(detail?: { planName?: string; status
   localStorage.setItem('vetpro_subscription_status', status);
   localStorage.setItem('vetpro_subscription_paid', 'true');
   localStorage.setItem('vetpro_selected_plan', plan);
+  localStorage.setItem('vetpro_subscription_created_at', new Date().toISOString());
 
   try {
     const event = new CustomEvent('vetpro_subscription_unlocked', {
@@ -766,25 +767,46 @@ export async function verifyAndUnlockSubscription(params: {
  */
 export function checkTutorSubscriptionStatus(emailOrCustomerId?: string): { hasActivePlan: boolean; planName?: string; status?: string } {
   if (typeof window === 'undefined') {
-    return { hasActivePlan: false, planName: 'Essencial', status: 'INACTIVE' };
+    return { hasActivePlan: false, planName: 'Essencial', status: 'PENDING_PAYMENT' };
   }
 
   const storedStatus = localStorage.getItem('vetpro_subscription_status');
+  const storedPaid = localStorage.getItem('vetpro_subscription_paid');
   const storedPlan = localStorage.getItem('vetpro_selected_plan') || 'Essencial';
   const planDisplayName = storedPlan === 'especialista' ? 'Especialista' : 'Essencial';
 
-  if (storedStatus === 'ACTIVE' || storedStatus === 'RECEIVED' || storedStatus === 'CONFIRMED') {
+  const isStatusActive = storedStatus === 'ACTIVE' || storedStatus === 'RECEIVED' || storedStatus === 'CONFIRMED' || storedPaid === 'true';
+
+  if (!isStatusActive) {
     return {
-      hasActivePlan: true,
+      hasActivePlan: false,
       planName: planDisplayName,
-      status: storedStatus,
+      status: storedStatus || 'PENDING_PAYMENT',
     };
   }
 
-  // Se o status for pendente, inativo ou vencido:
+  let createdAt = localStorage.getItem('vetpro_subscription_created_at');
+  if (!createdAt) {
+    createdAt = new Date().toISOString();
+    localStorage.setItem('vetpro_subscription_created_at', createdAt);
+  }
+
+  const diffDays = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  
+  // A assinatura dura exatamente 30 dias. Passou de 30 dias, expira automaticamente para pendente/inativo.
+  if (diffDays > 30) {
+    localStorage.setItem('vetpro_subscription_status', 'PENDING_PAYMENT');
+    localStorage.removeItem('vetpro_subscription_paid');
+    return {
+      hasActivePlan: false,
+      planName: planDisplayName,
+      status: 'PENDING_PAYMENT',
+    };
+  }
+
   return {
-    hasActivePlan: false,
+    hasActivePlan: true,
     planName: planDisplayName,
-    status: storedStatus || 'PENDING_PAYMENT',
+    status: 'ACTIVE',
   };
 }

@@ -73,8 +73,9 @@ export default function TutorDashboard() {
             if (profile.asaas_customer_id) setCustomerId(profile.asaas_customer_id);
             if (profile.subscription_id) setSubscriptionId(profile.subscription_id);
 
-            const isActive = profile.subscription_status === 'ACTIVE' || profile.subscription_status === 'CONFIRMED' || profile.subscription_status === 'RECEIVED';
-            setHasActivePlan(isActive);
+            const isDbActive = profile.subscription_status === 'ACTIVE' || profile.subscription_status === 'CONFIRMED' || profile.subscription_status === 'RECEIVED';
+            const sub = checkTutorSubscriptionStatus();
+            setHasActivePlan(isDbActive || sub.hasActivePlan);
           } else {
             setTutorName(localName || email.split('@')[0] || 'Tutor');
             const sub = checkTutorSubscriptionStatus();

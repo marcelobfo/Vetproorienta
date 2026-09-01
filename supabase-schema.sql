@@ -79,11 +79,34 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
 CREATE TABLE IF NOT EXISTS public.tenant_modules (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE NOT NULL,
-  module_key TEXT NOT NULL,     -- 'mod-expert', 'mod-prescription', 'mod-whatsapp', 'mod-rag', etc.
+  module_key TEXT NOT NULL,     -- 'mod-expert', 'mod-prescription', 'mod-whatsapp', 'mod-rag', 'mod-partners', etc.
   enabled BOOLEAN DEFAULT true,
   settings JSONB DEFAULT '{}'::jsonb,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(tenant_id, module_key)
+);
+
+-- 5.1 Tabela de Parceiros Comerciais, Rede Credenciada & GPS
+CREATE TABLE IF NOT EXISTS public.partners (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'Clínica Veterinária', -- 'Clínica Veterinária', 'Pet Shop & Banho', 'Farmácia Veterinária', 'Laboratório', 'Hospital 24h'
+  address TEXT NOT NULL,
+  phone TEXT,
+  whatsapp TEXT,
+  email TEXT,
+  website TEXT,
+  image_url TEXT,
+  rating NUMERIC(3,2) DEFAULT 5.0,
+  is_featured BOOLEAN DEFAULT false,
+  is_active BOOLEAN DEFAULT true,
+  discount_coupon TEXT,
+  benefits TEXT,
+  latitude NUMERIC(10,8),
+  longitude NUMERIC(11,8),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 6. Tabela de Pets Cadastrados / Triados
@@ -235,12 +258,27 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON public.chat_messages(ses
 CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON public.chat_messages(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_base_tenant ON public.knowledge_base(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_partners_tenant ON public.partners(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_partners_active_featured ON public.partners(is_active, is_featured);
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_source ON public.webhook_logs(source);
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_created ON public.webhook_logs(created_at DESC);
 
 -- ==============================================================================
 -- FUNÇÕES AUXILIARES E TRIGGERS
 -- ==============================================================================
+
+-- Função para Exclusão de Usuários do Auth (Security Definer)
+CREATE OR REPLACE FUNCTION public.delete_user(user_id_to_delete UUID)
+RETURNS void AS $$
+BEGIN
+  -- Apenas admins e super_admins podem excluir usuários
+  IF NOT public.is_super_admin() AND NOT public.is_tenant_admin() THEN
+    RAISE EXCEPTION 'Acesso negado. Apenas administradores podem excluir usuários.';
+  END IF;
+
+  DELETE FROM auth.users WHERE id = user_id_to_delete;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Trigger para atualizar automaticamente a coluna updated_at
 CREATE OR REPLACE FUNCTION public.set_current_timestamp_updated_at()
@@ -324,6 +362,7 @@ ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pet_vaccines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_modules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.partners ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_settings ENABLE ROW LEVEL SECURITY;
@@ -444,6 +483,15 @@ CREATE POLICY "Acesso aos módulos" ON public.tenant_modules
     tenant_id = public.current_user_tenant_id() OR public.is_super_admin()
   );
 
+-- 7.1 Políticas para Parceiros e Anúncios Rotativos
+DROP POLICY IF EXISTS "Todos podem visualizar parceiros ativos" ON public.partners;
+CREATE POLICY "Todos podem visualizar parceiros ativos" ON public.partners
+  FOR SELECT USING (is_active = true OR public.is_super_admin() OR public.is_tenant_admin());
+
+DROP POLICY IF EXISTS "Apenas Super Admin gerencia parceiros" ON public.partners;
+CREATE POLICY "Apenas Super Admin gerencia parceiros" ON public.partners
+  FOR ALL USING (public.is_super_admin());
+
 -- 8. Webhook Logs e Auditoria
 DROP POLICY IF EXISTS "Admins veem logs de webhooks" ON public.webhook_logs;
 CREATE POLICY "Admins veem logs de webhooks" ON public.webhook_logs
@@ -456,6 +504,8 @@ CREATE POLICY "Admins veem logs de auditoria" ON public.audit_logs
 -- ==============================================================================
 -- DADOS INICIAIS (SEED DE PLANOS E CONFIGURAÇÃO INICIAL)
 -- ==============================================================================
+
+ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS description TEXT;
 
 INSERT INTO public.plans (name, description, price_monthly, price_annual, max_tutors, max_vets, max_ai_tokens, is_popular)
 VALUES 

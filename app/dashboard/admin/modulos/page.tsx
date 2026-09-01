@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react';
 import { 
   Zap, ShieldCheck, PhoneCall, FileSpreadsheet, 
-  Stethoscope, Sparkles, CheckCircle2, AlertCircle, Save, Building, RefreshCw
+  Stethoscope, Sparkles, CheckCircle2, AlertCircle, Save, Building, RefreshCw,
+  MapPin, ShieldAlert, Crown
 } from 'lucide-react';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
+import { DEFAULT_MODULES, SYSTEM_MODULE_KEYS } from '@/lib/moduleService';
 
 interface ModuleItem {
   id: string;
@@ -16,9 +18,19 @@ interface ModuleItem {
   icon: any;
   enabled: boolean;
   requiresCrmv?: boolean;
+  requiresSuperAdmin?: boolean;
 }
 
 const INITIAL_MODULES: ModuleItem[] = [
+  {
+    id: SYSTEM_MODULE_KEYS.PARCEIROS_GPS,
+    name: 'Rede de Parceiros Credenciados, GPS & Anúncios Rotativos',
+    category: 'Parceiros & Monetização',
+    description: 'Ativa o módulo público e restrito de parceiros credenciados (hospitais 24h, clínicas e pet shops), cálculo de proximidade por GPS e os banners de anúncios rotativos no sistema.',
+    icon: MapPin,
+    enabled: true,
+    requiresSuperAdmin: true
+  },
   {
     id: 'mod-expert',
     name: 'Encaminhamento para Veterinário Humano',
@@ -39,7 +51,7 @@ const INITIAL_MODULES: ModuleItem[] = [
   },
   {
     id: 'mod-whatsapp',
-    name: 'Disparos Automáticos WhatsApp (Z-API / Evolution)',
+    name: 'Disparos Automáticos WhatsApp (Evolution API)',
     category: 'Comunicação & Retenção',
     description: 'Envia lembretes automáticos de vacinação, reforços de antiparasitários e retornos pós-consulta diretamente no WhatsApp do tutor.',
     icon: PhoneCall,
@@ -158,6 +170,10 @@ export default function ModulosAdminPage() {
         configMap[m.id] = m.enabled;
       });
       localStorage.setItem('vetpro_modules_config', JSON.stringify(configMap));
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('vetpro_modules_changed'));
+      }
 
       if (isSupabaseConfigured()) {
         const supabase = getSupabaseClient();
@@ -305,7 +321,11 @@ export default function ModulosAdminPage() {
                 </div>
 
                 <div className="flex items-center justify-between pt-3 border-t border-brand-border-strong text-[11px]">
-                  {mod.requiresCrmv ? (
+                  {mod.requiresSuperAdmin ? (
+                    <span className="text-amber-400 flex items-center gap-1 font-semibold">
+                      <Crown className="w-3.5 h-3.5" /> Exclusivo Super Admin
+                    </span>
+                  ) : mod.requiresCrmv ? (
                     <span className="text-blue-400 flex items-center gap-1 font-medium">
                       <ShieldCheck className="w-3.5 h-3.5" /> Requer CRMV do médico veterinário
                     </span>

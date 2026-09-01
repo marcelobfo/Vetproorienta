@@ -18,32 +18,40 @@ export const getCredentials = () => {
   return { url, anonKey, serviceRoleKey };
 };
 
-const { url: initialUrl, anonKey: initialKey } = getCredentials();
-
-export const supabase = createClient(
-  initialUrl || 'https://placeholder.supabase.co',
-  initialKey || 'placeholder_key'
-);
+// Singleton Client Instance Cache
+let cachedClient: SupabaseClient | null = null;
+let cachedKey = '';
 
 export const getSupabaseClient = (customUrl?: string, customAnonKey?: string): SupabaseClient => {
   const credentials = getCredentials();
-  const url = customUrl || credentials.url;
-  const anonKey = customAnonKey || credentials.anonKey;
+  const url = customUrl || credentials.url || 'https://placeholder.supabase.co';
+  const anonKey = customAnonKey || credentials.anonKey || 'placeholder_key';
+  const cacheKey = `${url}___${anonKey}`;
 
-  if (url && anonKey && !url.includes('placeholder')) {
-    try {
-      return createClient(url, anonKey, {
-        auth: {
-          persistSession: typeof window !== 'undefined',
-          autoRefreshToken: typeof window !== 'undefined',
-        },
-      });
-    } catch (e) {
-      console.error('Erro ao instanciar Supabase Client:', e);
-    }
+  if (cachedClient && cachedKey === cacheKey) {
+    return cachedClient;
   }
-  return supabase;
+
+  try {
+    cachedClient = createClient(url, anonKey, {
+      auth: {
+        persistSession: typeof window !== 'undefined',
+        autoRefreshToken: typeof window !== 'undefined',
+        detectSessionInUrl: typeof window !== 'undefined',
+      },
+    });
+    cachedKey = cacheKey;
+    return cachedClient;
+  } catch (e) {
+    console.error('Erro ao instanciar Supabase Client:', e);
+    if (!cachedClient) {
+      cachedClient = createClient('https://placeholder.supabase.co', 'placeholder_key');
+    }
+    return cachedClient;
+  }
 };
+
+export const supabase = getSupabaseClient();
 
 export const getSupabaseAdminClient = (customUrl?: string, customServiceKey?: string): SupabaseClient | null => {
   const credentials = getCredentials();

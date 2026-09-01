@@ -6,10 +6,11 @@ import {
   PawPrint, CheckCircle2, Video, Heart, Shield, HelpCircle, 
   MessageCircle, X, Clock, Smartphone, Star, Search, FileText, 
   AlertCircle, RefreshCw, Lock, Sparkles, ChevronDown, 
-  ShieldAlert, Stethoscope, HeartPulse, UserCheck, Baby, Activity
+  ShieldAlert, Stethoscope, HeartPulse, UserCheck, Baby, Activity, Navigation, Building
 } from 'lucide-react';
 import { useState } from 'react';
 import { createAsaasCustomer, createAsaasSubscription, getAsaasConfig } from '@/lib/asaas';
+import { PartnerRotativeAds } from '@/components/PartnerRotativeAds';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -290,6 +291,7 @@ export default function LandingPage() {
           <nav className="hidden md:flex items-center gap-8 text-[14.5px] font-medium text-brand-text-muted">
             <a href="#como-funciona" className="hover:text-brand-text transition-colors">Como funciona</a>
             <a href="#para-quem" className="hover:text-brand-text transition-colors">Para quem é</a>
+            <a href="#parceiros" className="hover:text-brand-text transition-colors">Parceiros & GPS</a>
             <a href="#planos" className="hover:text-brand-text transition-colors">Planos</a>
             <a href="#faq" className="hover:text-brand-text transition-colors">Dúvidas</a>
           </nav>
@@ -481,6 +483,25 @@ export default function LandingPage() {
               );
             })}
           </div>
+        </div>
+      </section>
+
+      {/* Dobra: Rede de Parceiros Credenciados & Anúncios Rotativos */}
+      <section id="parceiros" className="py-20 relative overflow-hidden bg-brand-surface/20 border-t border-brand-border-strong">
+        <div className="max-w-[1140px] mx-auto px-6">
+          <div className="text-center max-w-[680px] mx-auto mb-12">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-teal/10 text-brand-teal text-xs font-bold uppercase tracking-wider mb-3">
+              <Navigation className="w-3.5 h-3.5" /> Geolocalização & Guia
+            </div>
+            <h2 className="font-display text-[32px] md:text-[38px] font-bold tracking-tight mb-4">
+              Rede de Parceiros & Serviços Mais Próximos
+            </h2>
+            <p className="text-brand-text-muted text-[15px] leading-relaxed">
+              Descubra clínicas 24h, consultórios de especialistas, farmácias veterinárias e pet shops credenciados na sua região com vantagens exclusivas.
+            </p>
+          </div>
+
+          <PartnerRotativeAds />
         </div>
       </section>
 

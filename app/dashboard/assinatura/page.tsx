@@ -9,7 +9,7 @@ import {
   Wallet, User, X, MessageCircle, Send, Smartphone
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { getAsaasConfig, verifyAndUnlockSubscription, broadcastSubscriptionUnlock } from '@/lib/asaas';
+import { getAsaasConfig, verifyAndUnlockSubscription, broadcastSubscriptionUnlock, checkTutorSubscriptionStatus } from '@/lib/asaas';
 
 interface AsaasPaymentItem {
   id: string;
@@ -225,9 +225,11 @@ export default function AssinaturaPage() {
               activeSubId = profile.subscription_id;
             }
 
-            const isActive = profile.subscription_status === 'ACTIVE' || profile.subscription_status === 'CONFIRMED' || profile.subscription_status === 'RECEIVED';
+            const subStatus = checkTutorSubscriptionStatus();
+            const isDbActive = profile.subscription_status === 'ACTIVE' || profile.subscription_status === 'CONFIRMED' || profile.subscription_status === 'RECEIVED';
+            const isActive = isDbActive || subStatus.hasActivePlan;
             setHasActivePlan(isActive);
-            setSubscriptionStatus(profile.subscription_status || 'PENDING_PAYMENT');
+            setSubscriptionStatus(isActive ? 'ACTIVE' : (profile.subscription_status || 'PENDING_PAYMENT'));
             
             if (profile.plan_id === 'especialista' || profile.plan_name?.toLowerCase().includes('especialista')) {
               setPlanPrice(29.90);

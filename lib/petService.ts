@@ -16,6 +16,7 @@ export interface PetRecord {
   microchip?: string;
   symptoms?: string;
   notes?: string;
+  image_url?: string;
   last_triage_at?: string;
   created_at?: string;
   updated_at?: string;
@@ -90,27 +91,45 @@ const LOCAL_STORAGE_KEY = 'vetpro_pets';
 const VACCINES_STORAGE_KEY = 'vetpro_pet_vaccines';
 
 /**
- * Carrega os pets com isolamento estrito por usuário/tutor
+ * Carrega os pets com isolamento estrito por usuário/tutor e mesclagem resiliente
  */
 export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> {
-  let pets: PetRecord[] = [];
+  let localPets: PetRecord[] = [];
   let targetUserId = filterUserId;
 
-  // Tentar identificar o usuário logado se filterUserId não foi explicitado
-  if (!targetUserId && isSupabaseConfigured()) {
+  // 1. Carregar sempre pets do LocalStorage
+  if (typeof window !== 'undefined') {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          localPets = parsed;
+        }
+      } catch {
+        localPets = [];
+      }
+    }
+  }
+
+  // 2. Identificar usuário logado se filterUserId não foi explicitado
+  let currentSessionUserId = '';
+  if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
-        // Verifica se é tutor
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .maybeSingle();
+        currentSessionUserId = session.user.id;
+        if (!targetUserId) {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .maybeSingle();
 
-        if (profile?.role === 'tutor' || !profile?.role) {
-          targetUserId = session.user.id;
+          if (profile?.role === 'tutor' || !profile?.role) {
+            targetUserId = session.user.id;
+          }
         }
       }
     } catch {
@@ -118,7 +137,8 @@ export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> 
     }
   }
 
-  // Tentar buscar do Supabase se configurado
+  // 3. Buscar do Supabase se configurado
+  let dbPets: PetRecord[] = [];
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
@@ -133,8 +153,8 @@ export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> 
 
       const { data, error } = await query;
 
-      if (!error && data) {
-        pets = data.map((d: any) => ({
+      if (!error && data && Array.isArray(data)) {
+        dbPets = data.map((d: any) => ({
           id: d.id,
           tenant_id: d.tenant_id,
           user_id: d.user_id,
@@ -149,35 +169,67 @@ export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> 
           microchip: d.microchip,
           symptoms: d.symptoms,
           notes: d.notes,
+          image_url: d.image_url || '',
           last_triage_at: d.last_triage_at || d.created_at,
           created_at: d.created_at,
           updated_at: d.updated_at
         }));
-        return pets;
       }
     } catch (e) {
-      console.warn('Erro ao consultar pets no Supabase, usando LocalStorage:', e);
+      console.warn('Erro ao consultar pets no Supabase:', e);
     }
   }
 
-  // Fallback para LocalStorage
-  if (typeof window !== 'undefined') {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (raw) {
-      try {
-        const allLocalPets: PetRecord[] = JSON.parse(raw);
-        if (targetUserId && targetUserId !== 'all') {
-          pets = allLocalPets.filter(p => p.user_id === targetUserId);
-        } else {
-          pets = allLocalPets;
-        }
-      } catch {
-        pets = [];
-      }
+  // 4. Mesclar LocalStorage e Supabase de forma segura sem perder pets
+  const petMap = new Map<string, PetRecord>();
+
+  // Inserir primeiro os do LocalStorage
+  localPets.forEach(p => {
+    if (p && p.id) {
+      petMap.set(p.id, p);
+    }
+  });
+
+  // Mesclar com os do Supabase (mantendo image_url se já existia no local)
+  dbPets.forEach(p => {
+    if (p && p.id) {
+      const local = petMap.get(p.id);
+      petMap.set(p.id, {
+        ...local,
+        ...p,
+        image_url: p.image_url || local?.image_url || '',
+      });
+    }
+  });
+
+  let mergedPets = Array.from(petMap.values());
+
+  // 5. Filtragem consistente por tutor se solicitado
+  if (targetUserId && targetUserId !== 'all') {
+    mergedPets = mergedPets.filter(p => 
+      !p.user_id || 
+      p.user_id === targetUserId || 
+      (currentSessionUserId && p.user_id === currentSessionUserId)
+    );
+  }
+
+  // Ordenar decrescente por updated_at / created_at
+  mergedPets.sort((a, b) => {
+    const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+
+  // Manter LocalStorage atualizado com o conjunto mesclado
+  if (typeof window !== 'undefined' && mergedPets.length > 0) {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(mergedPets));
+    } catch {
+      // continua
     }
   }
 
-  return pets;
+  return mergedPets;
 }
 
 /**
@@ -213,6 +265,7 @@ export async function savePetRecord(pet: Partial<PetRecord>): Promise<{ success:
       microchip: pet.microchip || '',
       symptoms: pet.symptoms || '',
       notes: pet.notes || '',
+      image_url: pet.image_url || '',
       last_triage_at: new Date().toISOString(),
       created_at: pet.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -238,27 +291,37 @@ export async function savePetRecord(pet: Partial<PetRecord>): Promise<{ success:
           weight: newRecord.weight,
           symptoms: newRecord.symptoms,
           notes: newRecord.notes,
+          image_url: newRecord.image_url,
           last_triage_at: newRecord.last_triage_at,
           updated_at: newRecord.updated_at
         };
 
         if (tenantId) payload.tenant_id = tenantId;
 
-        await supabase
+        const { error: upsertErr } = await supabase
           .from('pets')
           .upsert(payload, { onConflict: 'id' });
+
+        if (upsertErr) {
+          console.warn('Tentando fallback sem colunas opcionais:', upsertErr.message);
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.image_url;
+          delete fallbackPayload.tenant_id;
+          await supabase.from('pets').upsert(fallbackPayload, { onConflict: 'id' });
+        }
       } catch (e) {
         console.warn('Erro na chamada Supabase pets:', e);
       }
     }
 
-    // 2. Salvar sempre no LocalStorage
+    // 2. Salvar sempre no LocalStorage com todos os dados
     if (typeof window !== 'undefined') {
       const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
       let allLocalPets: PetRecord[] = [];
       if (raw) {
         try {
           allLocalPets = JSON.parse(raw);
+          if (!Array.isArray(allLocalPets)) allLocalPets = [];
         } catch {
           allLocalPets = [];
         }
@@ -286,14 +349,20 @@ export async function savePetRecord(pet: Partial<PetRecord>): Promise<{ success:
 }
 
 /**
- * Remove um pet do banco e do LocalStorage
+ * Remove um pet do banco e do LocalStorage com registro de auditoria e limpeza de dependências
  */
-export async function deletePetRecord(id: string): Promise<boolean> {
+export async function deletePetRecord(id: string, petName?: string): Promise<boolean> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
       await supabase.from('pet_vaccines').delete().eq('pet_id', id);
       await supabase.from('pets').delete().eq('id', id);
+
+      // Registrar no log de auditoria de segurança
+      await supabase.from('audit_logs').insert({
+        action: 'PET_DELETED',
+        details: { pet_id: id, pet_name: petName || 'Pet', timestamp: new Date().toISOString() }
+      });
     } catch (e) {
       console.warn('Erro ao deletar pet no Supabase:', e);
     }
@@ -317,6 +386,125 @@ export async function deletePetRecord(id: string): Promise<boolean> {
   }
 
   return true;
+}
+
+/**
+ * Identifica pets presentes no histórico de triagens clínicas mas que não estão
+ * cadastrados na lista principal de pets (ex: Cão Pepa)
+ */
+export async function getOrphanPetsFromHistory(): Promise<Array<{
+  suggestedPet: Partial<PetRecord>;
+  sessionCount: number;
+  latestSessionId: string;
+  latestTriageAt: string;
+}>> {
+  const currentPets = await getSavedPets('all');
+  const existingNames = new Set(currentPets.map(p => p.name.trim().toLowerCase()));
+  const existingIds = new Set(currentPets.map(p => p.id));
+
+  const allSessions = await getChatSessions();
+  const orphanMap = new Map<string, {
+    suggestedPet: Partial<PetRecord>;
+    sessionCount: number;
+    latestSessionId: string;
+    latestTriageAt: string;
+  }>();
+
+  for (const session of allSessions) {
+    const petName = (session.pet_name || '').trim();
+    if (!petName || petName.toLowerCase() === 'pet' || petName.toLowerCase() === 'pet sem nome') {
+      continue;
+    }
+
+    const normName = petName.toLowerCase();
+    const hasLinkedPet = session.pet_id && existingIds.has(session.pet_id);
+    const hasMatchingName = existingNames.has(normName);
+
+    if (!hasLinkedPet && !hasMatchingName) {
+      const existingEntry = orphanMap.get(normName);
+      if (!existingEntry) {
+        orphanMap.set(normName, {
+          suggestedPet: {
+            name: petName,
+            tutor_name: session.tutor_name || 'Tutor',
+            species: session.species || 'Cão',
+            breed: session.breed || 'SRD',
+            sex: (session.sex as any) || 'Não informado',
+            age: session.age || 'Não informada',
+            weight: session.weight || 'Não informado',
+            symptoms: session.summary || '',
+            last_triage_at: session.updated_at || session.created_at,
+          },
+          sessionCount: 1,
+          latestSessionId: session.id,
+          latestTriageAt: session.updated_at || session.created_at,
+        });
+      } else {
+        existingEntry.sessionCount += 1;
+        if (new Date(session.updated_at).getTime() > new Date(existingEntry.latestTriageAt).getTime()) {
+          existingEntry.latestTriageAt = session.updated_at;
+          existingEntry.latestSessionId = session.id;
+        }
+      }
+    }
+  }
+
+  return Array.from(orphanMap.values());
+}
+
+/**
+ * Restaura um pet a partir de uma sessão de histórico clínico de triagem
+ */
+export async function restorePetFromHistory(suggestedPet: Partial<PetRecord>, sessionId?: string): Promise<{
+  success: boolean;
+  data?: PetRecord;
+  error?: string;
+}> {
+  const saveResult = await savePetRecord(suggestedPet);
+  if (!saveResult.success || !saveResult.data) {
+    return saveResult;
+  }
+
+  const restoredPet = saveResult.data;
+
+  // Re-vincular sessões de chat que tenham esse nome de pet
+  try {
+    const allSessions = await getChatSessions();
+    const targetName = restoredPet.name.trim().toLowerCase();
+    
+    let updatedAny = false;
+    const updatedSessions = allSessions.map(s => {
+      if ((s.pet_name && s.pet_name.trim().toLowerCase() === targetName) || (sessionId && s.id === sessionId)) {
+        updatedAny = true;
+        return {
+          ...s,
+          pet_id: restoredPet.id,
+          pet_name: restoredPet.name,
+          species: restoredPet.species,
+          breed: restoredPet.breed,
+        };
+      }
+      return s;
+    });
+
+    if (updatedAny) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(updatedSessions));
+      }
+
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseClient();
+        await supabase
+          .from('chat_sessions')
+          .update({ pet_id: restoredPet.id })
+          .ilike('pet_name', restoredPet.name);
+      }
+    }
+  } catch (e) {
+    console.warn('Erro ao revincular sessões de chat após restaurar pet:', e);
+  }
+
+  return { success: true, data: restoredPet };
 }
 
 // ==============================================================================
