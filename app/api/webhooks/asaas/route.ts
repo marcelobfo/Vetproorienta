@@ -13,8 +13,8 @@ async function sendWhatsAppMessage(toPhone: string, text: string) {
     phone = `55${phone}`;
   }
 
-  const serverUrl = (process.env.EVOLUTION_SERVER_URL || process.env.NEXT_PUBLIC_EVOLUTION_SERVER_URL || '').replace(/\/+$/, '');
-  const apiKey = process.env.EVOLUTION_API_KEY || process.env.NEXT_PUBLIC_EVOLUTION_API_KEY || '';
+  const serverUrl = (process.env.EVOLUTION_SERVER_URL || '').replace(/\/+$/, '');
+  const apiKey = process.env.EVOLUTION_API_KEY || '';
   const instanceName = process.env.EVOLUTION_DEFAULT_INSTANCE || 'vetpro-clinica';
 
   if (!serverUrl) {

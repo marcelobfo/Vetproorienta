@@ -825,11 +825,8 @@ export async function sendVaccineReminderViaWhatsApp(params: {
     const config = getEvolutionConfig();
 
     // Validação preventiva se o servidor Evolution API está configurado
-    if (!config.serverUrl && !process.env.EVOLUTION_SERVER_URL && !process.env.NEXT_PUBLIC_EVOLUTION_SERVER_URL) {
-      return {
-        success: false,
-        error: 'Servidor da Evolution API não configurado. Por favor, acesse o menu "Admin > WhatsApp & Evolution" para configurar a URL e a Chave de API.'
-      };
+    if (!config.serverUrl && typeof window !== 'undefined' && !localStorage.getItem('vetpro_evolution_url')) {
+      // Deixa o backend tentar usar o EVOLUTION_SERVER_URL do servidor se disponível
     }
 
     const targetInstance = (config.defaultInstance || 'vetpro-clinica').trim();

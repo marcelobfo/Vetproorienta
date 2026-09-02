@@ -82,8 +82,8 @@ export const normalizeEvolutionInstance = (item: any, fallbackIdx = 0): Normaliz
 };
 
 export const getEvolutionConfig = (): EvolutionConfig => {
-  let serverUrl = process.env.NEXT_PUBLIC_EVOLUTION_SERVER_URL || '';
-  let apiKey = process.env.NEXT_PUBLIC_EVOLUTION_API_KEY || '';
+  let serverUrl = '';
+  let apiKey = '';
   let defaultInstance = 'vetpro-clinica';
 
   if (typeof window !== 'undefined') {

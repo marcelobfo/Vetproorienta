@@ -144,7 +144,7 @@ export async function runAutomatedVaccineReminders(options: {
 
     // 1. Obter configuração da Evolution API
     const evolutionConfig = getEvolutionConfig();
-    const serverUrl = evolutionConfig.serverUrl || process.env.EVOLUTION_SERVER_URL || process.env.NEXT_PUBLIC_EVOLUTION_SERVER_URL;
+    const serverUrl = evolutionConfig.serverUrl || process.env.EVOLUTION_SERVER_URL;
     const apiKey = evolutionConfig.apiKey || process.env.EVOLUTION_API_KEY;
     const instanceName = (evolutionConfig.defaultInstance || 'vetpro-clinica').trim();
 
