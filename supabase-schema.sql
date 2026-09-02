@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS public.pets (
   microchip TEXT,
   symptoms TEXT,
   notes TEXT,
+  image_url TEXT,
   last_triage_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -427,8 +428,8 @@ CREATE POLICY "Admins gerenciam usuários da sua clínica" ON public.user_profil
 DROP POLICY IF EXISTS "Acesso aos pets do tenant" ON public.pets;
 CREATE POLICY "Acesso aos pets do tenant" ON public.pets
   FOR ALL USING (
-    tenant_id = public.current_user_tenant_id() OR 
     user_id = auth.uid() OR 
+    (tenant_id = public.current_user_tenant_id() AND (public.is_tenant_admin() OR public.is_super_admin())) OR 
     public.is_super_admin()
   );
 
@@ -436,20 +437,22 @@ CREATE POLICY "Acesso aos pets do tenant" ON public.pets
 DROP POLICY IF EXISTS "Acesso às vacinas do tenant" ON public.pet_vaccines;
 CREATE POLICY "Acesso às vacinas do tenant" ON public.pet_vaccines
   FOR ALL USING (
-    tenant_id = public.current_user_tenant_id() OR 
     EXISTS (
       SELECT 1 FROM public.pets p 
-      WHERE p.id = pet_id AND (p.tenant_id = public.current_user_tenant_id() OR p.user_id = auth.uid())
-    ) OR
-    public.is_super_admin()
+      WHERE p.id = pet_id AND (
+        p.user_id = auth.uid() OR 
+        (p.tenant_id = public.current_user_tenant_id() AND (public.is_tenant_admin() OR public.is_super_admin())) OR 
+        public.is_super_admin()
+      )
+    )
   );
 
 -- 6. Sessões de Chat e Mensagens
 DROP POLICY IF EXISTS "Acesso aos chats do tenant" ON public.chat_sessions;
 CREATE POLICY "Acesso aos chats do tenant" ON public.chat_sessions
   FOR ALL USING (
-    tenant_id = public.current_user_tenant_id() OR 
-    user_id = auth.uid() OR
+    user_id = auth.uid() OR 
+    (tenant_id = public.current_user_tenant_id() AND (public.is_tenant_admin() OR public.is_super_admin())) OR 
     public.is_super_admin()
   );
 
@@ -458,8 +461,12 @@ CREATE POLICY "Acesso às mensagens da sessão" ON public.chat_messages
   FOR ALL USING (
     EXISTS (
       SELECT 1 FROM public.chat_sessions cs
-      WHERE cs.id = session_id AND (cs.tenant_id = public.current_user_tenant_id() OR cs.user_id = auth.uid())
-    ) OR public.is_super_admin()
+      WHERE cs.id = session_id AND (
+        cs.user_id = auth.uid() OR 
+        (cs.tenant_id = public.current_user_tenant_id() AND (public.is_tenant_admin() OR public.is_super_admin())) OR 
+        public.is_super_admin()
+      )
+    )
   );
 
 -- 7. Configurações de IA, Módulos e Base de Conhecimento
@@ -502,10 +509,18 @@ CREATE POLICY "Admins veem logs de auditoria" ON public.audit_logs
   FOR ALL USING (public.is_super_admin() OR public.is_tenant_admin());
 
 -- ==============================================================================
--- DADOS INICIAIS (SEED DE PLANOS E CONFIGURAÇÃO INICIAL)
+-- DADOS INICIAIS E MIGRAÇÕES DE COMPATIBILIDADE
 -- ==============================================================================
 
+-- Garantir que todas as colunas necessárias existam em tabelas criadas previamente
 ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.pets ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE public.pets ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.pets ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE;
+ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.user_profiles(id) ON DELETE SET NULL;
+ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS pet_id UUID REFERENCES public.pets(id) ON DELETE SET NULL;
+ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE;
+ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS image_url TEXT;
 
 INSERT INTO public.plans (name, description, price_monthly, price_annual, max_tutors, max_vets, max_ai_tokens, is_popular)
 VALUES 

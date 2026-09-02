@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import { isValidUUID, generateUUID } from '@/lib/petService';
 
 export interface TutorRecord {
   id: string;
@@ -90,8 +91,9 @@ export async function getTutors(): Promise<TutorRecord[]> {
 export async function saveTutor(tutor: Partial<TutorRecord> & { name: string; email: string }): Promise<{ success: boolean; data?: TutorRecord; error?: string }> {
   try {
     const now = new Date().toISOString();
+    const finalId = isValidUUID(tutor.id) ? tutor.id! : generateUUID();
     const tutorToSave: TutorRecord = {
-      id: tutor.id || `tutor-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: finalId,
       name: tutor.name.trim(),
       email: tutor.email.trim().toLowerCase(),
       phone: tutor.phone || '',
@@ -215,8 +217,9 @@ export async function getVets(): Promise<VetRecord[]> {
 export async function saveVet(vet: Partial<VetRecord> & { name: string; email: string; crmv: string }): Promise<{ success: boolean; data?: VetRecord; error?: string }> {
   try {
     const now = new Date().toISOString();
+    const finalId = isValidUUID(vet.id) ? vet.id! : generateUUID();
     const vetToSave: VetRecord = {
-      id: vet.id || `vet-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: finalId,
       name: vet.name.trim(),
       email: vet.email.trim().toLowerCase(),
       phone: vet.phone || '',

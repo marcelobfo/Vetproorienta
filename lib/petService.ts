@@ -89,6 +89,24 @@ export const VACCINE_PRESETS = {
 
 const LOCAL_STORAGE_KEY = 'vetpro_pets';
 const VACCINES_STORAGE_KEY = 'vetpro_pet_vaccines';
+const CHAT_SESSIONS_STORAGE_KEY = 'vetpro_chat_sessions';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isValidUUID(id?: string | null): boolean {
+  if (!id) return false;
+  return UUID_REGEX.test(id);
+}
+
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 /**
  * Carrega os pets com isolamento estrito por usuário/tutor e mesclagem resiliente
@@ -97,7 +115,7 @@ export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> 
   let localPets: PetRecord[] = [];
   let targetUserId = filterUserId;
 
-  // 1. Carregar sempre pets do LocalStorage
+  // 1. Carregar pets do LocalStorage
   if (typeof window !== 'undefined') {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (raw) {
@@ -114,20 +132,25 @@ export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> 
 
   // 2. Identificar usuário logado se filterUserId não foi explicitado
   let currentSessionUserId = '';
+  let currentUserRole = 'tutor';
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
         currentSessionUserId = session.user.id;
-        if (!targetUserId) {
-          const { data: profile } = await supabase
-            .from('user_profiles')
-            .select('role')
-            .eq('id', session.user.id)
-            .maybeSingle();
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .maybeSingle();
 
-          if (profile?.role === 'tutor' || !profile?.role) {
+        if (profile?.role) {
+          currentUserRole = profile.role;
+        }
+
+        if (!targetUserId) {
+          if (currentUserRole === 'tutor') {
             targetUserId = session.user.id;
           }
         }
@@ -204,13 +227,11 @@ export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> 
 
   let mergedPets = Array.from(petMap.values());
 
-  // 5. Filtragem consistente por tutor se solicitado
+  // 5. Filtragem consistente por tutor se solicitado ou se usuário logado for tutor
   if (targetUserId && targetUserId !== 'all') {
-    mergedPets = mergedPets.filter(p => 
-      !p.user_id || 
-      p.user_id === targetUserId || 
-      (currentSessionUserId && p.user_id === currentSessionUserId)
-    );
+    mergedPets = mergedPets.filter(p => p.user_id === targetUserId || (currentSessionUserId && p.user_id === currentSessionUserId));
+  } else if (currentSessionUserId && currentUserRole === 'tutor') {
+    mergedPets = mergedPets.filter(p => p.user_id === currentSessionUserId);
   }
 
   // Ordenar decrescente por updated_at / created_at
@@ -220,10 +241,19 @@ export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> 
     return timeB - timeA;
   });
 
-  // Manter LocalStorage atualizado com o conjunto mesclado
+  // Atualizar LocalStorage com o conjunto mesclado mantendo integridade
   if (typeof window !== 'undefined' && mergedPets.length > 0) {
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(mergedPets));
+      // Mescla com o armazenamento global sem apagar pets de outros perfis
+      const rawCurrent = localStorage.getItem(LOCAL_STORAGE_KEY);
+      let existingAll: PetRecord[] = [];
+      if (rawCurrent) {
+        try { existingAll = JSON.parse(rawCurrent); } catch { existingAll = []; }
+      }
+      const existingMap = new Map<string, PetRecord>();
+      existingAll.forEach(p => { if (p?.id) existingMap.set(p.id, p); });
+      mergedPets.forEach(p => { if (p?.id) existingMap.set(p.id, p); });
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(existingMap.values())));
     } catch {
       // continua
     }
@@ -238,24 +268,41 @@ export async function getSavedPets(filterUserId?: string): Promise<PetRecord[]> 
 export async function savePetRecord(pet: Partial<PetRecord>): Promise<{ success: boolean; data?: PetRecord; error?: string }> {
   try {
     let resolvedUserId = pet.user_id;
+    let resolvedTenantId = pet.tenant_id;
 
-    if (!resolvedUserId && isSupabaseConfigured()) {
+    if (isSupabaseConfigured()) {
       try {
         const supabase = getSupabaseClient();
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user?.id) {
-          resolvedUserId = session.user.id;
+          if (!resolvedUserId) {
+            resolvedUserId = session.user.id;
+          }
+          // Obter tenant_id do usuário logado se não fornecido
+          if (!resolvedTenantId) {
+            const { data: userProf } = await supabase
+              .from('user_profiles')
+              .select('tenant_id')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (userProf?.tenant_id) {
+              resolvedTenantId = userProf.tenant_id;
+            }
+          }
         }
       } catch {
         // continua
       }
     }
 
+    const finalId = isValidUUID(pet.id) ? pet.id! : generateUUID();
+
     const newRecord: PetRecord = {
-      id: pet.id || `pet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: finalId,
+      tenant_id: resolvedTenantId || undefined,
       user_id: resolvedUserId || undefined,
-      name: pet.name || 'Pet sem nome',
-      tutor_name: pet.tutor_name || 'Tutor',
+      name: (pet.name || 'Pet sem nome').trim(),
+      tutor_name: (pet.tutor_name || 'Tutor').trim(),
       tutor_phone: pet.tutor_phone || '',
       species: pet.species || 'Cão',
       breed: pet.breed || 'SRD',
@@ -266,7 +313,7 @@ export async function savePetRecord(pet: Partial<PetRecord>): Promise<{ success:
       symptoms: pet.symptoms || '',
       notes: pet.notes || '',
       image_url: pet.image_url || '',
-      last_triage_at: new Date().toISOString(),
+      last_triage_at: pet.last_triage_at || new Date().toISOString(),
       created_at: pet.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -275,8 +322,15 @@ export async function savePetRecord(pet: Partial<PetRecord>): Promise<{ success:
     if (isSupabaseConfigured()) {
       try {
         const supabase = getSupabaseClient();
-        const { data: tenantData } = await supabase.from('tenants').select('id').limit(1).maybeSingle();
-        const tenantId = tenantData?.id;
+
+        // Se ainda não temos tenant_id, buscar o tenant padrão
+        if (!resolvedTenantId) {
+          const { data: tenantData } = await supabase.from('tenants').select('id').limit(1).maybeSingle();
+          if (tenantData?.id) {
+            resolvedTenantId = tenantData.id;
+            newRecord.tenant_id = tenantData.id;
+          }
+        }
 
         const payload: any = {
           id: newRecord.id,
@@ -289,6 +343,7 @@ export async function savePetRecord(pet: Partial<PetRecord>): Promise<{ success:
           sex: newRecord.sex,
           age: newRecord.age,
           weight: newRecord.weight,
+          microchip: newRecord.microchip,
           symptoms: newRecord.symptoms,
           notes: newRecord.notes,
           image_url: newRecord.image_url,
@@ -296,25 +351,32 @@ export async function savePetRecord(pet: Partial<PetRecord>): Promise<{ success:
           updated_at: newRecord.updated_at
         };
 
-        if (tenantId) payload.tenant_id = tenantId;
+        if (resolvedTenantId) {
+          payload.tenant_id = resolvedTenantId;
+        }
 
         const { error: upsertErr } = await supabase
           .from('pets')
           .upsert(payload, { onConflict: 'id' });
 
         if (upsertErr) {
-          console.warn('Tentando fallback sem colunas opcionais:', upsertErr.message);
+          console.warn('[Supabase Pets] Tentando fallback sem colunas opcionais:', upsertErr.message);
           const fallbackPayload = { ...payload };
           delete fallbackPayload.image_url;
-          delete fallbackPayload.tenant_id;
-          await supabase.from('pets').upsert(fallbackPayload, { onConflict: 'id' });
+          const { error: fallbackErr } = await supabase
+            .from('pets')
+            .upsert(fallbackPayload, { onConflict: 'id' });
+
+          if (fallbackErr) {
+            console.error('[Supabase Pets] Erro crítico ao persistir pet no Supabase:', fallbackErr.message);
+          }
         }
-      } catch (e) {
-        console.warn('Erro na chamada Supabase pets:', e);
+      } catch (e: any) {
+        console.warn('Erro na chamada Supabase pets:', e?.message || e);
       }
     }
 
-    // 2. Salvar sempre no LocalStorage com todos os dados
+    // 2. Salvar sempre no LocalStorage
     if (typeof window !== 'undefined') {
       const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
       let allLocalPets: PetRecord[] = [];
@@ -390,7 +452,7 @@ export async function deletePetRecord(id: string, petName?: string): Promise<boo
 
 /**
  * Identifica pets presentes no histórico de triagens clínicas mas que não estão
- * cadastrados na lista principal de pets (ex: Cão Pepa)
+ * cadastrados na lista principal de pets. Garante isolamento estrito por tutor.
  */
 export async function getOrphanPetsFromHistory(): Promise<Array<{
   suggestedPet: Partial<PetRecord>;
@@ -398,11 +460,35 @@ export async function getOrphanPetsFromHistory(): Promise<Array<{
   latestSessionId: string;
   latestTriageAt: string;
 }>> {
-  const currentPets = await getSavedPets('all');
+  let currentSessionUserId = '';
+  let currentUserRole = 'tutor';
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        currentSessionUserId = session.user.id;
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile?.role) {
+          currentUserRole = profile.role;
+        }
+      }
+    } catch {}
+  }
+
+  // Buscar os pets existentes do usuário atual
+  const currentPets = await getSavedPets(currentUserRole === 'tutor' ? currentSessionUserId : undefined);
   const existingNames = new Set(currentPets.map(p => p.name.trim().toLowerCase()));
   const existingIds = new Set(currentPets.map(p => p.id));
 
-  const allSessions = await getChatSessions();
+  // Buscar sessões filtradas pelo tutor
+  const allSessions = await getChatSessions(currentUserRole === 'tutor' ? currentSessionUserId : undefined);
   const orphanMap = new Map<string, {
     suggestedPet: Partial<PetRecord>;
     sessionCount: number;
@@ -411,6 +497,13 @@ export async function getOrphanPetsFromHistory(): Promise<Array<{
   }>();
 
   for (const session of allSessions) {
+    // Isolamento estrito: se o usuário logado for tutor, só considerar sessões dele
+    if (currentUserRole === 'tutor' && currentSessionUserId) {
+      if (!session.user_id || session.user_id !== currentSessionUserId) {
+        continue;
+      }
+    }
+
     const petName = (session.pet_name || '').trim();
     if (!petName || petName.toLowerCase() === 'pet' || petName.toLowerCase() === 'pet sem nome') {
       continue;
@@ -600,9 +693,10 @@ export async function savePetVaccine(vaccine: Partial<PetVaccineRecord>): Promis
     }
 
     const calculatedStatus = calculateVaccineStatus(vaccine.next_due_date, vaccine.status);
+    const finalId = isValidUUID(vaccine.id) ? vaccine.id! : generateUUID();
 
     const record: PetVaccineRecord = {
-      id: vaccine.id || `vac_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: finalId,
       pet_id: vaccine.pet_id,
       vaccine_name: vaccine.vaccine_name,
       application_date: vaccine.application_date || new Date().toISOString().split('T')[0],
@@ -772,24 +866,56 @@ export async function sendVaccineReminderViaWhatsApp(params: {
   }
 }
 
-const CHAT_SESSIONS_STORAGE_KEY = 'vetpro_chat_sessions';
-
 /**
- * Carrega todas as sessões de chat com histórico
+ * Carrega as sessões de chat com histórico e isolamento estrito por usuário
  */
-export async function getChatSessions(): Promise<ChatSessionRecord[]> {
+export async function getChatSessions(filterUserId?: string): Promise<ChatSessionRecord[]> {
   let sessions: ChatSessionRecord[] = [];
+  let targetUserId = filterUserId;
+  let currentSessionUserId = '';
+  let currentUserRole = 'tutor';
 
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
-      const { data: sessionRows, error } = await supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        currentSessionUserId = session.user.id;
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile?.role) {
+          currentUserRole = profile.role;
+        }
+
+        if (!targetUserId && currentUserRole === 'tutor') {
+          targetUserId = session.user.id;
+        }
+      }
+    } catch {
+      // continua
+    }
+  }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      let query = supabase
         .from('chat_sessions')
         .select(`
           *,
           chat_messages (*)
         `)
         .order('updated_at', { ascending: false });
+
+      if (targetUserId && targetUserId !== 'all') {
+        query = query.eq('user_id', targetUserId);
+      }
+
+      const { data: sessionRows, error } = await query;
 
       if (!error && sessionRows && sessionRows.length > 0) {
         sessions = sessionRows.map((s: any) => ({
@@ -831,7 +957,16 @@ export async function getChatSessions(): Promise<ChatSessionRecord[]> {
     const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
     if (raw) {
       try {
-        sessions = JSON.parse(raw);
+        const parsed: ChatSessionRecord[] = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          if (targetUserId && targetUserId !== 'all') {
+            sessions = parsed.filter(s => s.user_id === targetUserId);
+          } else if (currentUserRole === 'tutor' && currentSessionUserId) {
+            sessions = parsed.filter(s => s.user_id === currentSessionUserId);
+          } else {
+            sessions = parsed;
+          }
+        }
       } catch {
         sessions = [];
       }
@@ -845,7 +980,7 @@ export async function getChatSessions(): Promise<ChatSessionRecord[]> {
  * Busca uma sessão de chat específica por ID
  */
 export async function getChatSessionById(sessionId: string): Promise<ChatSessionRecord | null> {
-  const all = await getChatSessions();
+  const all = await getChatSessions('all');
   return all.find(s => s.id === sessionId) || null;
 }
 
@@ -853,7 +988,7 @@ export async function getChatSessionById(sessionId: string): Promise<ChatSession
  * Busca a última sessão de chat realizada para um determinado Pet
  */
 export async function getLatestChatSessionForPet(petId: string): Promise<ChatSessionRecord | null> {
-  const all = await getChatSessions();
+  const all = await getChatSessions('all');
   const petSessions = all
     .filter(s => s.pet_id === petId)
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
@@ -869,17 +1004,44 @@ export async function saveChatSession(
 ): Promise<{ success: boolean; data?: ChatSessionRecord; error?: string }> {
   try {
     const nowIso = new Date().toISOString();
-    const sessionId = sessionData.id || `session_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const sessionId = isValidUUID(sessionData.id) ? sessionData.id! : generateUUID();
     
+    let resolvedUserId = sessionData.user_id;
+    let resolvedTenantId = sessionData.tenant_id;
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+          if (!resolvedUserId) {
+            resolvedUserId = session.user.id;
+          }
+          if (!resolvedTenantId) {
+            const { data: userProf } = await supabase
+              .from('user_profiles')
+              .select('tenant_id')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (userProf?.tenant_id) {
+              resolvedTenantId = userProf.tenant_id;
+            }
+          }
+        }
+      } catch {
+        // continua
+      }
+    }
+
     // Gerar resumo automático se não fornecido
     const firstUserMsg = messages.find(m => m.role === 'user')?.content || 'Triagem geral';
     const autoSummary = sessionData.summary || (firstUserMsg.length > 60 ? firstUserMsg.substring(0, 57) + '...' : firstUserMsg);
 
     const fullSession: ChatSessionRecord = {
       id: sessionId,
-      tenant_id: sessionData.tenant_id,
-      user_id: sessionData.user_id,
-      pet_id: sessionData.pet_id,
+      tenant_id: resolvedTenantId || undefined,
+      user_id: resolvedUserId || undefined,
+      pet_id: isValidUUID(sessionData.pet_id) ? sessionData.pet_id : undefined,
       tutor_name: sessionData.tutor_name || 'Tutor',
       pet_name: sessionData.pet_name || 'Pet',
       species: sessionData.species || 'Cão',
@@ -890,7 +1052,7 @@ export async function saveChatSession(
       triage_level: sessionData.triage_level || 'verde',
       summary: autoSummary,
       messages: messages.map(m => ({
-        id: m.id,
+        id: isValidUUID(m.id) ? m.id : generateUUID(),
         session_id: sessionId,
         role: m.role,
         content: m.content,
@@ -905,10 +1067,18 @@ export async function saveChatSession(
     if (isSupabaseConfigured()) {
       try {
         const supabase = getSupabaseClient();
-        const { data: tenantData } = await supabase.from('tenants').select('id').limit(1).maybeSingle();
+
+        if (!resolvedTenantId) {
+          const { data: tenantData } = await supabase.from('tenants').select('id').limit(1).maybeSingle();
+          if (tenantData?.id) {
+            resolvedTenantId = tenantData.id;
+            fullSession.tenant_id = tenantData.id;
+          }
+        }
 
         const payload: any = {
           id: fullSession.id,
+          user_id: fullSession.user_id || null,
           tutor_name: fullSession.tutor_name,
           pet_name: fullSession.pet_name,
           species: fullSession.species,
@@ -921,15 +1091,19 @@ export async function saveChatSession(
           updated_at: fullSession.updated_at
         };
 
-        if (tenantData?.id) payload.tenant_id = tenantData.id;
+        if (resolvedTenantId) payload.tenant_id = resolvedTenantId;
         if (fullSession.pet_id) payload.pet_id = fullSession.pet_id;
 
-        await supabase.from('chat_sessions').upsert(payload, { onConflict: 'id' });
+        const { error: sessionUpsertErr } = await supabase
+          .from('chat_sessions')
+          .upsert(payload, { onConflict: 'id' });
 
-        // Salvar as mensagens mais recentes
-        if (messages.length > 0) {
-          const messagesPayload = messages.map(m => ({
-            id: m.id.length > 30 ? m.id : `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        if (sessionUpsertErr) {
+          console.warn('[Supabase ChatSession] Erro ao salvar sessão:', sessionUpsertErr.message);
+        } else if (fullSession.messages.length > 0) {
+          // Salvar as mensagens mais recentes
+          const messagesPayload = fullSession.messages.map(m => ({
+            id: m.id,
             session_id: fullSession.id,
             sender_type: m.role === 'model' ? 'ai' : 'tutor',
             content: m.content,
@@ -946,7 +1120,11 @@ export async function saveChatSession(
 
     // 2. Salvar no LocalStorage
     if (typeof window !== 'undefined') {
-      const all = await getChatSessions();
+      const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
+      let all: ChatSessionRecord[] = [];
+      if (raw) {
+        try { all = JSON.parse(raw); } catch { all = []; }
+      }
       const existingIdx = all.findIndex(s => s.id === fullSession.id);
       let updated: ChatSessionRecord[];
       if (existingIdx >= 0) {
