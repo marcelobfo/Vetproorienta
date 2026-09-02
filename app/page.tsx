@@ -8,12 +8,24 @@ import {
   AlertCircle, RefreshCw, Lock, Sparkles, ChevronDown, 
   ShieldAlert, Stethoscope, HeartPulse, UserCheck, Baby, Activity, Navigation, Building
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createAsaasCustomer, createAsaasSubscription, getAsaasConfig } from '@/lib/asaas';
 import { PartnerRotativeAds } from '@/components/PartnerRotativeAds';
+import { supabase } from '@/lib/supabase';
 
 export default function LandingPage() {
   const router = useRouter();
+
+  // Detecta se o usuário caiu na landing page vindo de um link de redefinição de senha
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      if (hash.includes('type=recovery') || search.includes('type=recovery') || hash.includes('access_token')) {
+        router.replace(`/redefinir-senha${hash || search}`);
+      }
+    }
+  }, [router]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('');
   const [cpfCnpj, setCpfCnpj] = useState('');

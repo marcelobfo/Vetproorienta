@@ -11,13 +11,33 @@ export default function RedefinirSenhaPage() {
   const [success, setSuccess] = useState(false);
   const router = useRouter();
 
-  // Verifica se o usuário chegou aqui através do link com o token de recuperação
+  // Verifica se o usuário chegou aqui através do link com o token de recuperação ou código PKCE
   useEffect(() => {
-    supabase.auth.onAuthStateChange((event) => {
+    const handleAuthRedirect = async () => {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        if (code) {
+          try {
+            await supabase.auth.exchangeCodeForSession(code);
+          } catch (e) {
+            console.error('Erro ao trocar código por sessão:', e);
+          }
+        }
+      }
+    };
+
+    handleAuthRedirect();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         // Usuário está pronto para redefinir a senha
       }
     });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const handleUpdatePassword = async (e: React.FormEvent<HTMLFormElement>) => {

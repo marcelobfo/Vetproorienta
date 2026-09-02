@@ -20,8 +20,12 @@ export default function EsqueciSenhaPage() {
     const email = formData.get('email') as string;
 
     try {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+      const cleanOrigin = appUrl ? appUrl.replace(/\/+$/, '') : window.location.origin.replace(':3002', '');
+      const redirectTarget = `${cleanOrigin}/redefinir-senha`;
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/redefinir-senha`,
+        redirectTo: redirectTarget,
       });
 
       if (error) throw error;
