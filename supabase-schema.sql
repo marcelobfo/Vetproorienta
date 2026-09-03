@@ -514,6 +514,17 @@ CREATE POLICY "Admins veem logs de auditoria" ON public.audit_logs
 
 -- Garantir que todas as colunas necessárias existam em tabelas criadas previamente
 ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS cpf TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS cpf_cnpj TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS plan_name TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS plan_selected TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS subscription_id TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS asaas_subscription_id TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS asaas_customer_id TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS last_payment_date TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.user_profiles DROP CONSTRAINT IF EXISTS user_profiles_subscription_status_check;
+ALTER TABLE public.user_profiles ADD CONSTRAINT user_profiles_subscription_status_check CHECK (subscription_status IN ('ACTIVE', 'INACTIVE', 'PENDING', 'PENDING_PAYMENT', 'OVERDUE', 'CONFIRMED', 'RECEIVED'));
+
 ALTER TABLE public.pets ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE public.pets ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
 ALTER TABLE public.pets ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE;

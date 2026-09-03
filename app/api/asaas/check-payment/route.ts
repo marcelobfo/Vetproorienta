@@ -76,14 +76,32 @@ export async function POST(req: NextRequest) {
     };
 
     // 1. Busca cobranças no Asaas vinculadas ao cliente ou assinatura
-    let paymentsUrl = `${baseUrl}/v3/payments?limit=10&sort=dueDate&order=desc`;
+    let activeBaseUrl = baseUrl;
+    let paymentsUrl = `${activeBaseUrl}/v3/payments?limit=10&sort=dueDate&order=desc`;
     if (targetSubscriptionId) {
       paymentsUrl += `&subscription=${targetSubscriptionId}`;
     } else if (targetCustomerId) {
       paymentsUrl += `&customer=${targetCustomerId}`;
     }
 
-    const paymentsRes = await fetch(paymentsUrl, { method: 'GET', headers });
+    let paymentsRes = await fetch(paymentsUrl, { method: 'GET', headers });
+
+    if (paymentsRes.status === 401 && (!mergedAsaasConfig.environment || mergedAsaasConfig.environment === 'auto')) {
+      const fallbackUrl = activeBaseUrl.includes('sandbox') ? 'https://api.asaas.com' : 'https://api-sandbox.asaas.com';
+      console.warn(`[Asaas check-payment] 401 no endpoint ${activeBaseUrl}. Tentando fallback em ${fallbackUrl}...`);
+      let fallbackPaymentsUrl = `${fallbackUrl}/v3/payments?limit=10&sort=dueDate&order=desc`;
+      if (targetSubscriptionId) {
+        fallbackPaymentsUrl += `&subscription=${targetSubscriptionId}`;
+      } else if (targetCustomerId) {
+        fallbackPaymentsUrl += `&customer=${targetCustomerId}`;
+      }
+      const retryRes = await fetch(fallbackPaymentsUrl, { method: 'GET', headers });
+      if (retryRes.ok || retryRes.status !== 401) {
+        activeBaseUrl = fallbackUrl;
+        paymentsRes = retryRes;
+      }
+    }
+
     if (!paymentsRes.ok) {
       const errText = await paymentsRes.text();
       return NextResponse.json({

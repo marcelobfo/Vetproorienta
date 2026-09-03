@@ -28,7 +28,7 @@ export function getAsaasBaseUrl(
   environment?: 'auto' | 'sandbox' | 'production' | 'custom',
   customBaseUrl?: string
 ): string {
-  // Se houver ambiente forçado
+  // 1. Se houver URL customizada expressa
   if (environment === 'custom' && customBaseUrl && customBaseUrl.trim()) {
     return customBaseUrl.trim().replace(/\/+$/, '');
   }
@@ -39,8 +39,8 @@ export function getAsaasBaseUrl(
     return 'https://api-sandbox.asaas.com';
   }
 
-  // Modo Automático: se estiver em browser e houver config salva
-  if (typeof window !== 'undefined' && !environment) {
+  // 2. Se estiver no browser e houver config salva no localStorage
+  if (typeof window !== 'undefined') {
     const savedEnv = localStorage.getItem('vetpro_asaas_environment');
     const savedCustomUrl = localStorage.getItem('vetpro_asaas_custom_base_url');
     if (savedEnv === 'production') return 'https://api.asaas.com';
@@ -48,21 +48,51 @@ export function getAsaasBaseUrl(
     if (savedEnv === 'custom' && savedCustomUrl) return savedCustomUrl.trim().replace(/\/+$/, '');
   }
 
-  const key = apiKey || getAsaasApiKey();
-  if (key && (key.includes('hml') || key.includes('sandbox') || key.startsWith('$aact_YTU'))) {
+  // 3. Verifica variáveis de ambiente do servidor
+  const envVar = (
+    process.env.ASAAS_ENVIRONMENT || 
+    process.env.ASAAS_ENV || 
+    process.env.NEXT_PUBLIC_ASAAS_ENVIRONMENT || 
+    ''
+  ).toLowerCase().trim();
+
+  if (envVar === 'production') return 'https://api.asaas.com';
+  if (envVar === 'sandbox') return 'https://api-sandbox.asaas.com';
+
+  const customUrlVar = (process.env.ASAAS_BASE_URL || '').trim();
+  if (customUrlVar) return customUrlVar.replace(/\/+$/, '');
+
+  const key = (apiKey || getAsaasApiKey() || '').trim();
+
+  // 4. Se a chave possui identificadores explícitos de sandbox / homologação
+  if (key && (
+    key.includes('hml') || 
+    key.includes('sandbox') || 
+    key.startsWith('$aact_YTU') || 
+    key.includes('_sandbox_') || 
+    key.includes('_test_')
+  )) {
     return 'https://api-sandbox.asaas.com';
   }
+
+  // 5. Se estiver em modo de desenvolvimento local ou default seguro
+  if (process.env.NODE_ENV === 'development') {
+    return 'https://api-sandbox.asaas.com';
+  }
+
+  // 6. Chave padrão Asaas ($aact_...)
   if (key && key.startsWith('$aact_')) {
     return 'https://api.asaas.com';
   }
+
   return 'https://api-sandbox.asaas.com';
 }
 
 export function getAsaasApiKey(): string {
-  let key = process.env.ASAAS_API_KEY || '';
+  let key = (process.env.ASAAS_API_KEY || '').trim();
   if (typeof window !== 'undefined') {
     const localApiKey = localStorage.getItem('vetpro_asaas_apikey');
-    if (localApiKey) key = localApiKey;
+    if (localApiKey && localApiKey.trim()) key = localApiKey.trim();
   }
   return key;
 }
@@ -136,14 +166,19 @@ export interface AsaasSubscriptionResponse {
 }
 
 export const getAsaasConfig = (): AsaasConfig => {
-  let apiKey = process.env.ASAAS_API_KEY || '';
-  let webhookAuthToken = process.env.ASAAS_WEBHOOK_AUTH_TOKEN || '';
-  let environment: 'auto' | 'sandbox' | 'production' | 'custom' = 'auto';
-  let customBaseUrl = '';
-  let notificationDisabled = false;
-  let defaultCycle: AsaasCycle = 'MONTHLY';
-  let dueDaysOffset = 1;
-  let defaultBillingType: AsaasBillingType = 'UNDEFINED';
+  let apiKey = (process.env.ASAAS_API_KEY || '').trim();
+  let webhookAuthToken = (process.env.ASAAS_WEBHOOK_AUTH_TOKEN || '').trim();
+  let environment: 'auto' | 'sandbox' | 'production' | 'custom' = (
+    process.env.ASAAS_ENVIRONMENT || 
+    process.env.ASAAS_ENV || 
+    process.env.NEXT_PUBLIC_ASAAS_ENVIRONMENT || 
+    'auto'
+  ) as any;
+  let customBaseUrl = (process.env.ASAAS_BASE_URL || '').trim();
+  let notificationDisabled = process.env.ASAAS_NOTIFICATION_DISABLED === 'true';
+  let defaultCycle: AsaasCycle = (process.env.ASAAS_DEFAULT_CYCLE as any) || 'MONTHLY';
+  let dueDaysOffset = process.env.ASAAS_DUE_DAYS ? parseInt(process.env.ASAAS_DUE_DAYS, 10) : 1;
+  let defaultBillingType: AsaasBillingType = (process.env.ASAAS_DEFAULT_BILLING as any) || 'UNDEFINED';
   let fineValue = 2.0;
   let interestValue = 1.0;
   let planEssencialPrice = 9.90;
@@ -270,12 +305,26 @@ export async function directCreateAsaasCustomer(
     };
 
     // 1. Busca cliente existente para evitar duplicidade
+    let activeBaseUrl = baseUrl;
+    let searchUrl = `${activeBaseUrl}/v3/customers?cpfCnpj=${encodeURIComponent(sanitizedCpfCnpj)}`;
+    let searchRes: Response | null = null;
     try {
-      const searchUrl = `${baseUrl}/v3/customers?cpfCnpj=${encodeURIComponent(sanitizedCpfCnpj)}`;
-      const searchRes = await fetch(searchUrl, { method: 'GET', headers });
-      if (searchRes.ok) {
+      searchRes = await fetch(searchUrl, { method: 'GET', headers });
+      // Se deu 401 e o ambiente não foi forçado, tenta no ambiente oposto (Sandbox <-> Produção)
+      if (searchRes.status === 401 && (!config.environment || config.environment === 'auto')) {
+        const fallbackUrl = activeBaseUrl.includes('sandbox') ? 'https://api.asaas.com' : 'https://api-sandbox.asaas.com';
+        console.warn(`[Asaas] 401 no endpoint ${activeBaseUrl}. Tentando fallback em ${fallbackUrl}...`);
+        const fallbackRes = await fetch(`${fallbackUrl}/v3/customers?cpfCnpj=${encodeURIComponent(sanitizedCpfCnpj)}`, { method: 'GET', headers });
+        if (fallbackRes.ok || fallbackRes.status !== 401) {
+          activeBaseUrl = fallbackUrl;
+          searchRes = fallbackRes;
+        }
+      }
+
+      if (searchRes && searchRes.ok) {
         const searchJson = await searchRes.json();
         if (searchJson && Array.isArray(searchJson.data) && searchJson.data.length > 0) {
+          console.log(`[Asaas] Cliente existente localizado no Asaas (${searchJson.data[0].id})`);
           return {
             success: true,
             customer: searchJson.data[0],
@@ -304,12 +353,27 @@ export async function directCreateAsaasCustomer(
       payload.notificationDisabled = customerData.notificationDisabled;
     }
 
-    const createUrl = `${baseUrl}/v3/customers`;
-    const createRes = await fetch(createUrl, {
+    let createUrl = `${activeBaseUrl}/v3/customers`;
+    let createRes = await fetch(createUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
     });
+
+    // Se falhar com 401 e o ambiente não estiver travado, tenta no outro endpoint
+    if (createRes.status === 401 && (!config.environment || config.environment === 'auto')) {
+      const fallbackUrl = activeBaseUrl.includes('sandbox') ? 'https://api.asaas.com' : 'https://api-sandbox.asaas.com';
+      console.warn(`[Asaas] 401 ao criar cliente em ${activeBaseUrl}. Tentando fallback em ${fallbackUrl}...`);
+      const retryRes = await fetch(`${fallbackUrl}/v3/customers`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (retryRes.ok || retryRes.status !== 401) {
+        activeBaseUrl = fallbackUrl;
+        createRes = retryRes;
+      }
+    }
 
     const createJson = await createRes.json();
 
@@ -390,12 +454,27 @@ export async function directCreateAsaasSubscription(
       'User-Agent': 'VetProOrienta/1.0.0 (https://vetpro-orienta.app)',
     };
 
-    const targetUrl = `${baseUrl}/v3/subscriptions`;
-    const asaasRes = await fetch(targetUrl, {
+    let activeBaseUrl = baseUrl;
+    let targetUrl = `${activeBaseUrl}/v3/subscriptions`;
+    let asaasRes = await fetch(targetUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
     });
+
+    if (asaasRes.status === 401 && (!config.environment || config.environment === 'auto')) {
+      const fallbackUrl = activeBaseUrl.includes('sandbox') ? 'https://api.asaas.com' : 'https://api-sandbox.asaas.com';
+      console.warn(`[Asaas] 401 ao criar assinatura em ${activeBaseUrl}. Tentando fallback em ${fallbackUrl}...`);
+      const retryRes = await fetch(`${fallbackUrl}/v3/subscriptions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (retryRes.ok || retryRes.status !== 401) {
+        activeBaseUrl = fallbackUrl;
+        asaasRes = retryRes;
+      }
+    }
 
     const resJson = await asaasRes.json();
 
@@ -428,7 +507,7 @@ export async function directCreateAsaasSubscription(
             await new Promise((resolve) => setTimeout(resolve, 600));
           }
 
-          const paymentsRes = await fetch(`${baseUrl}/v3/subscriptions/${resJson.id}/payments`, {
+          const paymentsRes = await fetch(`${activeBaseUrl}/v3/subscriptions/${resJson.id}/payments`, {
             method: 'GET',
             headers,
           });
@@ -445,7 +524,7 @@ export async function directCreateAsaasSubscription(
 
               if (paymentId) {
                 try {
-                  const pixRes = await fetch(`${baseUrl}/v3/payments/${paymentId}/pixQrCode`, {
+                  const pixRes = await fetch(`${activeBaseUrl}/v3/payments/${paymentId}/pixQrCode`, {
                     method: 'GET',
                     headers,
                   });

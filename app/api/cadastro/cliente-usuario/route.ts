@@ -171,9 +171,9 @@ export async function POST(req: NextRequest) {
 
     // -------------------------------------------------------------
     // 3. Criar Usuário no Banco de Dados (Supabase Auth & user_profiles)
-    // Status inicial: 'pending_payment' / Sem acesso até que o pagamento seja confirmado
+    // Status inicial: 'PENDING' / Aguardando confirmação do pagamento no Asaas
     // -------------------------------------------------------------
-    let userId = `user_${Date.now()}_${rawCpf.substring(0, 4)}`;
+    let userId = '';
     let userCreatedInSupabase = false;
     let profileCreatedInSupabase = false;
     let supabaseErrorDetails: string | null = null;
@@ -187,7 +187,25 @@ export async function POST(req: NextRequest) {
         const adminClient = getSupabaseAdminClient(customSupabaseUrl, customSupabaseServiceKey);
         const supabase = adminClient || getSupabaseClient(customSupabaseUrl, customSupabaseAnonKey);
 
-        // 3.1 Tenta criar no Auth do Supabase com senha = CPF
+        // 3.1 Obtém ou garante a existência de um tenant padrão
+        let defaultTenantId: string | null = null;
+        try {
+          const { data: tenants } = await supabase.from('tenants').select('id').order('created_at', { ascending: true }).limit(1);
+          if (tenants && tenants.length > 0) {
+            defaultTenantId = tenants[0].id;
+          } else {
+            const { data: newTenant } = await supabase.from('tenants').insert({
+              name: 'Clínica Principal VetPro',
+              plan_name: 'VetPro Starter',
+              status: 'active',
+            }).select('id').single();
+            if (newTenant) defaultTenantId = newTenant.id;
+          }
+        } catch (tErr) {
+          console.warn('[Cadastro] Aviso ao obter tenant:', tErr);
+        }
+
+        // 3.2 Tenta criar no Auth do Supabase com senha = CPF
         if (adminClient && adminClient.auth?.admin) {
           try {
             const { data: adminUserData, error: adminUserError } = await adminClient.auth.admin.createUser({
@@ -198,7 +216,11 @@ export async function POST(req: NextRequest) {
                 full_name: trimmedName,
                 phone: rawPhone,
                 cpf: rawCpf,
+                cpf_cnpj: rawCpf,
                 role: 'tutor',
+                asaas_customer_id: asaasCustomerId || null,
+                asaas_subscription_id: subscriptionId || null,
+                plan_selected: planId || 'essencial',
               },
             });
 
@@ -206,14 +228,26 @@ export async function POST(req: NextRequest) {
               userId = adminUserData.user.id;
               userCreatedInSupabase = true;
             } else if (adminUserError) {
-              console.warn('[Cadastro] Tentando signUp fallback devido a:', adminUserError.message);
+              console.warn('[Cadastro] admin.createUser aviso:', adminUserError.message);
+              // Se usuário já existe, tenta localizar o ID dele
+              try {
+                const { data: userList } = await adminClient.auth.admin.listUsers();
+                const matched = userList?.users?.find((u: any) => u.email?.toLowerCase() === trimmedEmail);
+                if (matched?.id) {
+                  userId = matched.id;
+                  userCreatedInSupabase = true;
+                }
+              } catch (listErr) {
+                console.warn('[Cadastro] Não foi possível listar usuários admin:', listErr);
+              }
             }
           } catch (admErr: any) {
-            console.warn('[Cadastro] admin.createUser falhou, tentando signUp:', admErr.message);
+            console.warn('[Cadastro] admin.createUser falhou, tentando fallback:', admErr.message);
           }
         }
 
-        if (!userCreatedInSupabase) {
+        // 3.3 Fallback para signUp comum caso admin não tenha sido usado ou falhado
+        if (!userId) {
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
             email: trimmedEmail,
             password: initialPassword,
@@ -222,7 +256,10 @@ export async function POST(req: NextRequest) {
                 full_name: trimmedName,
                 phone: rawPhone,
                 cpf: rawCpf,
+                cpf_cnpj: rawCpf,
                 role: 'tutor',
+                asaas_customer_id: asaasCustomerId || null,
+                asaas_subscription_id: subscriptionId || null,
               },
             },
           });
@@ -231,32 +268,88 @@ export async function POST(req: NextRequest) {
             userId = signUpData.user.id;
             userCreatedInSupabase = true;
           } else if (signUpError) {
-            console.warn('[Cadastro] Supabase signUp erro:', signUpError.message);
+            console.warn('[Cadastro] Supabase signUp aviso:', signUpError.message);
             supabaseErrorDetails = signUpError.message;
+            // Se já existe no Supabase, tenta buscar o perfil existente
+            try {
+              const { data: existingProfile } = await supabase
+                .from('user_profiles')
+                .select('id')
+                .eq('email', trimmedEmail)
+                .maybeSingle();
+
+              if (existingProfile?.id) {
+                userId = existingProfile.id;
+                userCreatedInSupabase = true;
+              }
+            } catch (pErr) {
+              console.warn('[Cadastro] Erro ao buscar perfil por email:', pErr);
+            }
           }
         }
 
-        // 3.2 Cria ou atualiza o perfil em user_profiles com status pending_payment
-        const { error: profileError } = await supabase
+        // Se ainda não temos userId válido, cria fallback UUID para não travar
+        if (!userId) {
+          userId = crypto.randomUUID();
+        }
+
+        // 3.4 Cria ou atualiza o perfil em user_profiles com campos compatíveis
+        const nowIso = new Date().toISOString();
+        const fullPayload: Record<string, any> = {
+          id: userId,
+          email: trimmedEmail,
+          full_name: trimmedName,
+          phone: rawPhone,
+          role: 'tutor',
+          cpf: rawCpf,
+          cpf_cnpj: rawCpf,
+          status: 'active',
+          subscription_status: 'PENDING',
+          asaas_customer_id: asaasCustomerId || null,
+          asaas_subscription_id: subscriptionId || null,
+          plan_selected: planId || 'essencial',
+          plan_name: selectedPlanName,
+          updated_at: nowIso,
+        };
+
+        if (defaultTenantId) {
+          fullPayload.tenant_id = defaultTenantId;
+        }
+
+        // Tenta upsert completo primeiro
+        let { error: profileError } = await supabase
           .from('user_profiles')
-          .upsert({
+          .upsert(fullPayload, { onConflict: 'email' });
+
+        if (profileError) {
+          console.warn('[Cadastro] Tentando upsert com payload simplificado devido a:', profileError.message);
+          // Tenta apenas com campos garantidos do schema
+          const safePayload: Record<string, any> = {
             id: userId,
             email: trimmedEmail,
             full_name: trimmedName,
             phone: rawPhone,
             role: 'tutor',
-            cpf: rawCpf,
-            status: 'inactive', // Inativo/bloqueado até pagar
-            subscription_status: 'PENDING_PAYMENT',
-            subscription_id: subscriptionId || null,
+            cpf_cnpj: rawCpf,
+            status: 'active',
+            subscription_status: 'PENDING',
             asaas_customer_id: asaasCustomerId || null,
-            plan_id: planId || 'essencial',
-            plan_name: selectedPlanName,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'email' });
+            asaas_subscription_id: subscriptionId || null,
+            plan_selected: planId || 'essencial',
+            updated_at: nowIso,
+          };
+          if (defaultTenantId) safePayload.tenant_id = defaultTenantId;
+
+          const retryResult = await supabase
+            .from('user_profiles')
+            .upsert(safePayload, { onConflict: 'email' });
+
+          profileError = retryResult.error;
+        }
 
         if (!profileError) {
           profileCreatedInSupabase = true;
+          console.log(`[Cadastro] Perfil de usuário salvo com sucesso no Supabase: ${trimmedEmail} (${userId})`);
         } else {
           console.warn('[Cadastro] Erro ao gravar perfil no Supabase:', profileError.message);
           supabaseErrorDetails = (supabaseErrorDetails ? `${supabaseErrorDetails} | ` : '') + profileError.message;
