@@ -79,6 +79,7 @@ function ChatContent() {
   const [ragCount, setRagCount] = useState<number>(0);
   const [savedPetInfo, setSavedPetInfo] = useState<Partial<PetRecord> | null>(null);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+  const [newlyRegisteredPetNotification, setNewlyRegisteredPetNotification] = useState<string | null>(null);
   const [triageStatus, setTriageStatus] = useState<'verde' | 'amarelo' | 'vermelho'>('verde');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -318,15 +319,27 @@ function ChatContent() {
         setTriageStatus(data.triageLevel);
       }
 
-      // Atualizar dados cadastrais do pet se novos foram extraídos
-      let resolvedPetInfo = currentPetContext;
+      // Atualizar dados cadastrais do pet se novos foram extraídos ou cadastrados
+      let resolvedPetInfo: PetRecord | Partial<PetRecord> | null = currentPetContext;
       if (data.extractedData) {
         const ext = data.extractedData;
         if (ext.petName || ext.tutorName) {
+          if (ext.tutorName && typeof window !== 'undefined') {
+            localStorage.setItem('vetpro_tutor_name', ext.tutorName);
+          }
+
+          const isDifferentPet = !!(
+            ext.petName && 
+            activePet?.name && 
+            ext.petName.trim().toLowerCase() !== activePet.name.trim().toLowerCase()
+          );
+
+          const shouldCreateNewPet = data.isNewPet || isDifferentPet || !activePet?.id;
+
           const petRecordToSave: Partial<PetRecord> = {
-            id: activePet?.id,
+            id: shouldCreateNewPet ? undefined : activePet?.id,
             name: ext.petName || savedPetInfo?.name || 'Pet em Triagem',
-            tutor_name: ext.tutorName || savedPetInfo?.tutor_name || 'Tutor',
+            tutor_name: ext.tutorName || savedPetInfo?.tutor_name || (typeof window !== 'undefined' ? localStorage.getItem('vetpro_tutor_name') : null) || 'Tutor',
             species: ext.species || savedPetInfo?.species || 'Cão',
             breed: ext.breed || savedPetInfo?.breed || 'SRD',
             sex: ext.sex || savedPetInfo?.sex || 'Não informado',
@@ -335,10 +348,20 @@ function ChatContent() {
             symptoms: textToSend
           };
 
-          resolvedPetInfo = petRecordToSave as PetRecord;
-          setSavedPetInfo(petRecordToSave);
-          setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-          await savePetRecord(petRecordToSave);
+          const saveResult = await savePetRecord(petRecordToSave);
+          if (saveResult.success && saveResult.data) {
+            resolvedPetInfo = saveResult.data;
+            setActivePet(saveResult.data);
+            setSavedPetInfo(saveResult.data);
+            setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+            if (shouldCreateNewPet || isDifferentPet) {
+              setNewlyRegisteredPetNotification(saveResult.data.name);
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('vetpro_pet_updated', { detail: saveResult.data }));
+              }
+            }
+          }
         }
       }
 
@@ -349,7 +372,7 @@ function ChatContent() {
       await saveChatSession(
         {
           id: currentSessionId,
-          pet_id: activePet?.id || (resolvedPetInfo as any)?.id,
+          pet_id: (resolvedPetInfo as any)?.id || activePet?.id,
           pet_name: resolvedPetInfo?.name || activePet?.name || 'Pet',
           tutor_name: resolvedPetInfo?.tutor_name || activePet?.tutor_name || 'Tutor',
           species: resolvedPetInfo?.species || activePet?.species || 'Cão',
@@ -498,6 +521,42 @@ function ChatContent() {
               Ver Ficha Completa
               <ChevronRight className="w-3 h-3" />
             </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Notificação especial quando um novo pet for cadastrado pelo agente */}
+      {newlyRegisteredPetNotification && (
+        <div className="px-6 lg:px-8 py-3 bg-emerald-500/10 border-b border-emerald-500/30 flex items-center justify-between gap-3 text-xs animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="font-bold text-emerald-800 dark:text-emerald-300 text-sm">
+                🐾 Ficha de <span className="underline">{newlyRegisteredPetNotification}</span> cadastrada com sucesso!
+              </p>
+              <p className="text-emerald-700/80 dark:text-emerald-400/80 text-[11px]">
+                O prontuário foi criado no sistema e vinculado automaticamente ao histórico desta consulta.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/pets"
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <Dog className="w-3.5 h-3.5" />
+              Ver em Meus Pets
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+            <button
+              onClick={() => setNewlyRegisteredPetNotification(null)}
+              className="p-1 rounded-md text-emerald-600 hover:bg-emerald-500/20 transition-colors"
+              title="Fechar"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}

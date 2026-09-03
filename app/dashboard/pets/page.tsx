@@ -94,8 +94,20 @@ export default function PetsPage() {
       if (isMounted) setLoading(false);
     });
 
+    const handlePetUpdated = () => {
+      loadPets();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('vetpro_pet_updated', handlePetUpdated);
+      window.addEventListener('focus', handlePetUpdated);
+    }
+
     return () => {
       isMounted = false;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('vetpro_pet_updated', handlePetUpdated);
+        window.removeEventListener('focus', handlePetUpdated);
+      }
     };
   }, []);
 

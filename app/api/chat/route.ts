@@ -23,8 +23,8 @@ function formatSingleAsteriskBold(text: string): string {
   return formatted;
 }
 
-// Extração heurística rápida de dados fornecidos no chat
-function extractPetAndTutorInfo(conversationText: string) {
+// Extração robusta de dados fornecidos no chat (analisando tanto a IA quanto as mensagens do usuário)
+function extractPetAndTutorInfo(conversationText: string, assistantResponseText: string) {
   const info: {
     tutorName: string | null;
     petName: string | null;
@@ -34,6 +34,7 @@ function extractPetAndTutorInfo(conversationText: string) {
     age: string | null;
     weight: string | null;
     symptoms: string | null;
+    isNewRegistration: boolean;
   } = {
     tutorName: null,
     petName: null,
@@ -43,68 +44,132 @@ function extractPetAndTutorInfo(conversationText: string) {
     age: null,
     weight: null,
     symptoms: null,
+    isNewRegistration: false,
   };
 
-  const text = conversationText;
+  const combined = `${conversationText}\n${assistantResponseText}`;
+  const resp = assistantResponseText;
 
-  // 1. Seu nome / Tutor
-  const tutorMatch = text.match(/(?:seu\s+nome|nome\s+do\s+tutor|tutor|meu\s+nome\s+é|me\s+chamo|sou\s+o|sou\s+a)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,30})/i);
-  if (tutorMatch) {
-    const val = tutorMatch[1].trim().split('\n')[0].replace(/[*_]/g, '');
-    if (val && !['do pet', 'do cão', 'do gato'].includes(val.toLowerCase())) {
-      info.tutorName = val;
+  // 0. Tentar extrair de tag estruturada oculta <!-- PET_REGISTER: {...} -->
+  const tagMatch = resp.match(/<!--\s*PET_REGISTER:\s*(\{[\s\S]*?\})\s*-->/) || combined.match(/<!--\s*PET_REGISTER:\s*(\{[\s\S]*?\})\s*-->/);
+  if (tagMatch) {
+    try {
+      const parsed = JSON.parse(tagMatch[1]);
+      if (parsed.name) info.petName = String(parsed.name).trim();
+      if (parsed.tutor_name) info.tutorName = String(parsed.tutor_name).trim();
+      if (parsed.species) info.species = String(parsed.species).trim();
+      if (parsed.breed) info.breed = String(parsed.breed).trim();
+      if (parsed.sex) info.sex = String(parsed.sex).trim();
+      if (parsed.age) info.age = String(parsed.age).trim();
+      if (parsed.weight) info.weight = String(parsed.weight).trim();
+      if (parsed.is_new) info.isNewRegistration = true;
+    } catch {
+      // continua para regex
     }
   }
 
-  // 2. Nome do pet
-  const petMatch = text.match(/(?:nome\s+do\s+pet|pet|animal|ele\s+se\s+chama|ela\s+se\s+chama|o\s+nome\s+dele\s+é|o\s+nome\s+dela\s+é|chama-se)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,25})/i);
-  if (petMatch) {
-    info.petName = petMatch[1].trim().split('\n')[0].replace(/[*_]/g, '');
+  // 1. Detectar intenção de novo cadastro
+  if (
+    /ficha\s+cadastral\s+d[eao]\s+.*?\s+registrada/i.test(resp) ||
+    /vamos\s+cadastrar/i.test(resp) ||
+    /cadastr(?:o|ado|ada|amos|ei)\s+com\s+sucesso/i.test(resp) ||
+    /gostaria\s+que\s+cadastrasse/i.test(conversationText) ||
+    /cadastr(?:ar|e|asse)\s+(?:o|a|outro|mais\s+um)/i.test(conversationText)
+  ) {
+    info.isNewRegistration = true;
   }
 
-  // 3. Espécie (cão ou gato)
-  if (/\b(cão|cachorro|cadela|canino|canina|cao)\b/i.test(text)) {
-    info.species = 'Cão';
-  } else if (/\b(gato|gata|felino|felina)\b/i.test(text)) {
-    info.species = 'Gato';
+  // 2. Nome do Pet
+  if (!info.petName) {
+    const petExplicit = combined.match(/(?:[-*•]\s*)?(?:nome\s+do\s+pet|pet|animal|paciente)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,25})/i) ||
+                        combined.match(/ficha\s+cadastral\s+d[eao]\s+([A-Za-zÀ-ÖØ-öø-ÿ]{2,20})/i) ||
+                        conversationText.match(/cadastr(?:ar|e|asse)\s+(?:o|a|o\s+pet|a\s+pet)?\s*([A-Za-zÀ-ÖØ-öø-ÿ]{2,20})/i) ||
+                        combined.match(/(?:ele\s+se\s+chama|ela\s+se\s+chama|o\s+nome\s+dele\s+é|o\s+nome\s+dela\s+é|chama-se)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,25})/i);
+    if (petExplicit) {
+      const val = petExplicit[1].trim().split('\n')[0].replace(/[*_•\-]/g, '').trim();
+      if (val && !['do pet', 'do cão', 'do gato', 'registrada', 'sucesso', 'agora'].includes(val.toLowerCase())) {
+        info.petName = val;
+      }
+    }
   }
 
-  // 4. Raça
-  const breedMatch = text.match(/(?:raça|raca)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s-]{2,35})/i);
-  if (breedMatch) {
-    info.breed = breedMatch[1].trim().split('\n')[0].replace(/[*_]/g, '');
-  } else {
-    if (/srd|vira[- ]lata|sem\s+raça|mestiço/i.test(text)) info.breed = 'SRD (Sem Raça Definida)';
-    else if (/golden(?:\s+retriever)?/i.test(text)) info.breed = 'Golden Retriever';
-    else if (/shih[- ]tzu/i.test(text)) info.breed = 'Shih Tzu';
-    else if (/pit[- ]bull|pitbull/i.test(text)) info.breed = 'Pitbull';
-    else if (/buldogue|bulldog/i.test(text)) info.breed = 'Buldogue';
-    else if (/poodle/i.test(text)) info.breed = 'Poodle';
-    else if (/pastor(?:\s+alemão)?/i.test(text)) info.breed = 'Pastor Alemão';
-    else if (/siamês|siames/i.test(text)) info.breed = 'Siamês';
-    else if (/persa/i.test(text)) info.breed = 'Persa';
-    else if (/maine\s+coon/i.test(text)) info.breed = 'Maine Coon';
+  // 3. Tutor
+  if (!info.tutorName) {
+    const tutorExplicit = combined.match(/(?:[-*•]\s*)?(?:tutor|nome\s+do\s+tutor|seu\s+nome)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,35})/i) ||
+                          combined.match(/(?:meu\s+nome\s+é|me\s+chamo|sou\s+o|sou\s+a)\s+([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,30})/i) ||
+                          resp.match(/compreendido,\s*([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,25})!/i);
+    if (tutorExplicit) {
+      const val = tutorExplicit[1].trim().split('\n')[0].replace(/[*_•\-]/g, '').trim();
+      if (val && !['do pet', 'do cão', 'do gato', 'tutor'].includes(val.toLowerCase())) {
+        info.tutorName = val;
+      }
+    }
   }
 
-  // 5. Sexo
-  if (/\b(macho|masculino|menino|ele\s+é\s+macho)\b/i.test(text)) {
-    info.sex = 'Macho';
-  } else if (/\b(fêmea|femea|feminino|menina|ela\s+é\s+fêmea)\b/i.test(text)) {
-    info.sex = 'Fêmea';
+  // 4. Espécie
+  if (!info.species) {
+    const speciesMatch = combined.match(/(?:[-*•]\s*)?(?:espécie|especie)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,20})/i);
+    if (speciesMatch) {
+      const sp = speciesMatch[1].trim().toLowerCase();
+      if (sp.includes('gato') || sp.includes('felin')) info.species = 'Gato';
+      else if (sp.includes('cão') || sp.includes('cao') || sp.includes('cachorr') || sp.includes('canin')) info.species = 'Cão';
+    } else {
+      if (/\b(gato|gata|felino|felina|felinos)\b/i.test(combined)) {
+        info.species = 'Gato';
+      } else if (/\b(cão|cachorro|cadela|canino|canina|cao|caninos)\b/i.test(combined)) {
+        info.species = 'Cão';
+      }
+    }
   }
 
-  // 6. Idade
-  const ageMatch = text.match(/(?:idade)[\s*:]+([0-9A-Za-zÀ-ÖØ-öø-ÿ\s]{1,25})/i) || 
-                   text.match(/(\d+\s*(?:anos?|meses|mês|semanas?|dias?))/i);
-  if (ageMatch) {
-    info.age = ageMatch[1].trim().split('\n')[0].replace(/[*_]/g, '');
+  // 5. Raça
+  if (!info.breed) {
+    const breedMatch = combined.match(/(?:[-*•]\s*)?(?:raça|raca)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s-]{2,35})/i);
+    if (breedMatch) {
+      info.breed = breedMatch[1].trim().split('\n')[0].replace(/[*_•\-]/g, '').trim();
+    } else {
+      if (/srd|vira[- ]lata|sem\s+raça|mestiço/i.test(combined)) info.breed = 'SRD (Sem Raça Definida)';
+      else if (/siamês|siames/i.test(combined)) info.breed = 'Siamês';
+      else if (/persa/i.test(combined)) info.breed = 'Persa';
+      else if (/maine\s+coon/i.test(combined)) info.breed = 'Maine Coon';
+      else if (/golden(?:\s+retriever)?/i.test(combined)) info.breed = 'Golden Retriever';
+      else if (/shih[- ]tzu/i.test(combined)) info.breed = 'Shih Tzu';
+      else if (/pit[- ]bull|pitbull/i.test(combined)) info.breed = 'Pitbull';
+      else if (/buldogue|bulldog/i.test(combined)) info.breed = 'Buldogue';
+      else if (/poodle/i.test(combined)) info.breed = 'Poodle';
+      else if (/pastor(?:\s+alemão)?/i.test(combined)) info.breed = 'Pastor Alemão';
+    }
   }
 
-  // 7. Peso aproximado
-  const weightMatch = text.match(/(?:peso(?:\s+aproximado)?)[\s*:]+([0-9.,\sA-Za-z]{1,20})/i) ||
-                      text.match(/(\d+(?:[.,]\d+)?\s*(?:kg|quilos?|g|gramas?))/i);
-  if (weightMatch) {
-    info.weight = weightMatch[1].trim().split('\n')[0].replace(/[*_]/g, '');
+  // 6. Sexo
+  if (!info.sex) {
+    const sexMatch = combined.match(/(?:[-*•]\s*)?(?:sexo)[\s*:]+([A-Za-zÀ-ÖØ-öø-ÿ\s]{2,20})/i);
+    if (sexMatch) {
+      const s = sexMatch[1].trim().toLowerCase();
+      if (s.includes('fêm') || s.includes('fem')) info.sex = 'Fêmea';
+      else if (s.includes('mach') || s.includes('masc')) info.sex = 'Macho';
+    } else {
+      if (/\b(fêmea|femea|feminino|menina|ela\s+é\s+fêmea)\b/i.test(combined)) info.sex = 'Fêmea';
+      else if (/\b(macho|masculino|menino|ele\s+é\s+macho)\b/i.test(combined)) info.sex = 'Macho';
+    }
+  }
+
+  // 7. Idade
+  if (!info.age) {
+    const ageMatch = combined.match(/(?:[-*•]\s*)?(?:idade)[\s*:]+([0-9A-Za-zÀ-ÖØ-öø-ÿ\s]{1,25})/i) || 
+                     combined.match(/(\d+\s*(?:anos?|meses|mês|semanas?|dias?))/i);
+    if (ageMatch) {
+      info.age = ageMatch[1].trim().split('\n')[0].replace(/[*_•\-]/g, '').trim();
+    }
+  }
+
+  // 8. Peso aproximado
+  if (!info.weight) {
+    const weightMatch = combined.match(/(?:[-*•]\s*)?(?:peso(?:\s+aproximado)?)[\s*:]+([0-9.,\sA-Za-z]{1,20})/i) ||
+                        combined.match(/(\d+(?:[.,]\d+)?\s*(?:kg|quilos?|g|gramas?))/i);
+    if (weightMatch) {
+      info.weight = weightMatch[1].trim().split('\n')[0].replace(/[*_•\-]/g, '').trim();
+    }
   }
 
   return info;
@@ -179,7 +244,13 @@ Regras clínicas e de segurança:
 [DIRETRIZ ESTRITA DE CONFORMIDADE COM O PROMPT E BASE DE CONHECIMENTO RAG]:
 1. Você DEVE seguir com fidelidade absoluta todas as orientações e restrições deste System Prompt.
 2. Em nenhuma hipótese desvie ou fuja das diretrizes clínicas, regras éticas e restrições de formatação.
-3. Suas orientações técnicas, dados vacinais, protocolos e critérios de emergência DEVEM ser estritamente fundamentados na bibliografia e documentos da Base de Conhecimento RAG abaixo. Nunca invente dados contrários à base bibliográfica.`;
+3. Suas orientações técnicas, dados vacinais, protocolos e critérios de emergência DEVEM ser estritamente fundamentados na bibliografia e documentos da Base de Conhecimento RAG abaixo. Nunca invente dados contrários à base bibliográfica.
+
+[CADASTRO E REGISTRO DE PETS NO SISTEMA]:
+1. Sempre que o tutor pedir para cadastrar um novo pet (ex: "gostaria que cadastrasse a Mia também", "tenho outro gato", "cadastrar novo pet"), ou quando o tutor responder aos dados cadastrais, acolha e confirme o cadastro.
+2. Ao confirmar o cadastro de um pet, liste a ficha cadastral completa com os campos: Tutor, Nome do Pet, Espécie, Raça, Sexo, Idade, Peso aproximado.
+3. OBRIGATÓRIO: Ao final de qualquer mensagem em que você cadastrar, confirmar ou identificar a ficha cadastral de um pet, inclua SEMPRE no final da resposta a tag estruturada JSON (invisível para o usuário):
+<!-- PET_REGISTER: {"name": "NomeDoPet", "tutor_name": "NomeDoTutor", "species": "Cão ou Gato", "breed": "Raça", "sex": "Macho ou Fêmea", "age": "Idade", "weight": "Peso", "is_new": true} -->`;
 
     // Injeção de Contexto do Pet já cadastrado (para nunca pedir dados repetidos)
     if (petContext && petContext.name) {
@@ -255,15 +326,20 @@ Você JÁ POSSUI todos os dados cadastrais deste pet. NUNCA peça para o tutor d
 
     const response = await chat.sendMessage({ message: lastParts.length > 1 ? lastParts : lastMessage.content });
     
-    // Normalizar todo o texto gerado para ter apenas * em negrito
-    const cleanText = formatSingleAsteriskBold(response.text || '');
+    const rawAiText = response.text || '';
 
-    // Extrair dados cadastrais acumulados exclusivamente das mensagens enviadas pelo tutor/usuário
+    // Extrair dados cadastrais acumulados tanto das mensagens do usuário quanto da resposta da IA
     const userConversation = messages
       .filter((m: any) => m.role === 'user')
       .map((m: any) => m.content)
       .join('\n');
-    const extractedData = extractPetAndTutorInfo(userConversation);
+    const extractedData = extractPetAndTutorInfo(userConversation, rawAiText);
+
+    // Remover a tag <!-- PET_REGISTER: ... --> do texto visível ao usuário
+    let userVisibleText = rawAiText.replace(/<!--\s*PET_REGISTER:\s*\{[\s\S]*?\}\s*-->/g, '').trim();
+
+    // Normalizar todo o texto gerado para ter apenas * em negrito
+    const cleanText = formatSingleAsteriskBold(userVisibleText);
 
     // Avaliação heurística do nível de triagem (verde, amarelo, vermelho)
     let triageLevel: 'verde' | 'amarelo' | 'vermelho' = 'verde';
@@ -297,6 +373,7 @@ Você JÁ POSSUI todos os dados cadastrais deste pet. NUNCA peça para o tutor d
     return NextResponse.json({ 
       text: cleanText,
       extractedData,
+      isNewPet: extractedData.isNewRegistration,
       triageLevel
     });
   } catch (error) {
