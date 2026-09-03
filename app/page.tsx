@@ -13,7 +13,6 @@ import { createAsaasCustomer, createAsaasSubscription, getAsaasConfig } from '@/
 import { getEvolutionConfig } from '@/lib/evolution';
 import { PartnerRotativeAds } from '@/components/PartnerRotativeAds';
 import { supabase } from '@/lib/supabase';
-import { triggerPWAInstallModal } from '@/components/PwaInstallPrompt';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -317,14 +316,6 @@ export default function LandingPage() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={triggerPWAInstallModal}
-              className="text-xs font-bold px-3.5 py-2 rounded-full bg-brand-teal/15 hover:bg-brand-teal/25 border border-brand-teal/30 text-brand-teal transition-all flex items-center gap-1.5"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Baixar App (PWA)</span>
-            </button>
             <Link 
               href="/login"
               className="text-xs font-semibold px-4 py-2 rounded-full border border-brand-border-strong hover:bg-brand-surface text-brand-text transition-colors"
@@ -806,13 +797,6 @@ export default function LandingPage() {
           </div>
           <p>© 2026 VetPro Orienta. Todos os direitos reservados. Conformidade LGPD & Asaas.</p>
           <div className="flex flex-wrap items-center gap-4 justify-center">
-            <button
-              type="button"
-              onClick={triggerPWAInstallModal}
-              className="text-brand-teal font-semibold hover:underline flex items-center gap-1"
-            >
-              <Smartphone className="w-3.5 h-3.5" /> Baixar App PWA
-            </button>
             <Link href="/politica-de-privacidade" className="hover:text-brand-text transition-colors">
               Privacidade & LGPD
             </Link>
