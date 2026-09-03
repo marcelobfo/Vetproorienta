@@ -8,41 +8,32 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { customerId, subscriptionId, email, userId, asaasConfig: clientAsaasConfig, supabaseConfig: clientSupabaseConfig } = body;
 
-    const mergedAsaasConfig = { ...getAsaasConfig(), ...clientAsaasConfig };
-    const apiKey = (mergedAsaasConfig.apiKey || process.env.ASAAS_API_KEY || '').trim();
-    const baseUrl = getAsaasBaseUrl(apiKey, mergedAsaasConfig.environment, mergedAsaasConfig.customBaseUrl);
-
-    if (!apiKey) {
-      return NextResponse.json({
-        success: false,
-        error: 'Chave do Asaas não configurada no servidor.',
-      }, { status: 400 });
-    }
-
     let targetCustomerId = customerId;
     let targetSubscriptionId = subscriptionId;
-    let targetEmail = email;
+    let targetEmail = (email || '').trim().toLowerCase();
     let targetUserId = userId;
 
     const customSupabaseUrl = clientSupabaseConfig?.url;
     const customSupabaseAnonKey = clientSupabaseConfig?.anonKey;
     const customSupabaseServiceKey = clientSupabaseConfig?.serviceRoleKey;
 
-    // Se temos apenas email ou userId, busca os IDs no Supabase
-    if ((!targetCustomerId && !targetSubscriptionId) && isSupabaseConfigured(customSupabaseUrl, customSupabaseAnonKey || customSupabaseServiceKey)) {
+    // 1. Consulta primeiro o Supabase (se já estiver ativo no banco, libera na hora)
+    if (isSupabaseConfigured(customSupabaseUrl, customSupabaseAnonKey || customSupabaseServiceKey)) {
       try {
         const adminClient = getSupabaseAdminClient(customSupabaseUrl, customSupabaseServiceKey);
         const supabase = adminClient || getSupabaseClient(customSupabaseUrl, customSupabaseAnonKey);
         let query = supabase.from('user_profiles').select('*');
         if (targetUserId) query = query.eq('id', targetUserId);
-        else if (targetEmail) query = query.eq('email', targetEmail.toLowerCase().trim());
+        else if (targetEmail) query = query.eq('email', targetEmail);
+        else if (targetCustomerId) query = query.eq('asaas_customer_id', targetCustomerId);
+        else if (targetSubscriptionId) query = query.eq('asaas_subscription_id', targetSubscriptionId);
 
         const { data: profile } = await query.maybeSingle();
         if (profile) {
-          targetCustomerId = profile.asaas_customer_id;
-          targetSubscriptionId = profile.subscription_id;
-          targetUserId = profile.id;
-          targetEmail = profile.email;
+          if (!targetCustomerId && profile.asaas_customer_id) targetCustomerId = profile.asaas_customer_id;
+          if (!targetSubscriptionId) targetSubscriptionId = profile.asaas_subscription_id || profile.subscription_id;
+          if (!targetUserId) targetUserId = profile.id;
+          if (!targetEmail && profile.email) targetEmail = profile.email;
 
           // Se no Supabase já consta como ativo
           if (profile.subscription_status === 'ACTIVE' || profile.subscription_status === 'CONFIRMED' || profile.subscription_status === 'RECEIVED') {
@@ -50,7 +41,7 @@ export async function POST(req: NextRequest) {
               success: true,
               paid: true,
               status: 'ACTIVE',
-              planName: profile.plan_name || 'Essencial',
+              planName: profile.plan_name || profile.plan_selected || 'Essencial',
               message: 'Assinatura ativa e liberada!',
             });
           }
@@ -58,6 +49,26 @@ export async function POST(req: NextRequest) {
       } catch (err: any) {
         console.warn('Erro ao consultar Supabase em check-payment:', err.message);
       }
+    }
+
+    // 2. Resolução da chave do Asaas
+    const mergedAsaasConfig = { ...getAsaasConfig(), ...clientAsaasConfig };
+    const apiKey = (
+      mergedAsaasConfig.apiKey || 
+      process.env.ASAAS_API_KEY || 
+      process.env.NEXT_PUBLIC_ASAAS_API_KEY || 
+      process.env.ASAAS_ACCESS_TOKEN || 
+      process.env.ASAAS_KEY || 
+      process.env.ASAAS_TOKEN || 
+      ''
+    ).trim();
+    const baseUrl = getAsaasBaseUrl(apiKey, mergedAsaasConfig.environment, mergedAsaasConfig.customBaseUrl);
+
+    if (!apiKey) {
+      return NextResponse.json({
+        success: false,
+        error: 'Chave do Asaas não configurada no servidor. Configure a variável ASAAS_API_KEY no arquivo .env ou no Painel Admin > Asaas.',
+      }, { status: 400 });
     }
 
     if (!targetCustomerId && !targetSubscriptionId) {
@@ -75,7 +86,7 @@ export async function POST(req: NextRequest) {
       'User-Agent': 'VetProOrienta/1.0.0 (https://vetpro-orienta.app)',
     };
 
-    // 1. Busca cobranças no Asaas vinculadas ao cliente ou assinatura
+    // 3. Busca cobranças no Asaas vinculadas ao cliente ou assinatura
     let activeBaseUrl = baseUrl;
     let paymentsUrl = `${activeBaseUrl}/v3/payments?limit=10&sort=dueDate&order=desc`;
     if (targetSubscriptionId) {
@@ -172,7 +183,7 @@ export async function POST(req: NextRequest) {
     if (pendingPayment?.id) {
       // 1. Busca Pix
       try {
-        const pixRes = await fetch(`${baseUrl}/v3/payments/${pendingPayment.id}/pixQrCode`, {
+        const pixRes = await fetch(`${activeBaseUrl}/v3/payments/${pendingPayment.id}/pixQrCode`, {
           method: 'GET',
           headers,
         });
@@ -206,7 +217,7 @@ export async function POST(req: NextRequest) {
 
       // 2. Busca Linha Digitável do Boleto
       try {
-        const identRes = await fetch(`${baseUrl}/v3/payments/${pendingPayment.id}/identificationField`, {
+        const identRes = await fetch(`${activeBaseUrl}/v3/payments/${pendingPayment.id}/identificationField`, {
           method: 'GET',
           headers,
         });

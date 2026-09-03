@@ -248,6 +248,7 @@ export default function AssinaturaPage() {
         // Se houver dados no Asaas, busca faturas e links
         if (activeCustId || activeSubId || activeEmail) {
           try {
+            const localAsaasConfig = getAsaasConfig();
             const res = await fetch(`/api/asaas/check-payment`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -256,6 +257,11 @@ export default function AssinaturaPage() {
                 subscriptionId: activeSubId,
                 email: activeEmail,
                 userId: activeUserId,
+                asaasConfig: {
+                  apiKey: localAsaasConfig.apiKey,
+                  environment: localAsaasConfig.environment,
+                  customBaseUrl: localAsaasConfig.customBaseUrl,
+                },
               }),
             });
 
@@ -331,6 +337,7 @@ export default function AssinaturaPage() {
 
     setIsLoadingInvoices(true);
     try {
+      const localAsaasConfig = getAsaasConfig();
       const res = await fetch(`/api/asaas/check-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -339,6 +346,11 @@ export default function AssinaturaPage() {
           subscriptionId,
           email: userEmail,
           userId,
+          asaasConfig: {
+            apiKey: localAsaasConfig.apiKey,
+            environment: localAsaasConfig.environment,
+            customBaseUrl: localAsaasConfig.customBaseUrl,
+          },
         }),
       });
 

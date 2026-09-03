@@ -7,6 +7,7 @@ import {
   CreditCard, QrCode, Copy, CheckCircle2, RefreshCw, Lock, AlertTriangle 
 } from 'lucide-react';
 import { Suspense, useState, useEffect } from 'react';
+import { getAsaasConfig } from '@/lib/asaas';
 
 function ObrigadoContent() {
   const searchParams = useSearchParams();
@@ -44,6 +45,7 @@ function ObrigadoContent() {
       setIsCheckingPayment(true);
       setStatusMessage(null);
       try {
+        const localAsaasConfig = getAsaasConfig();
         const res = await fetch('/api/asaas/check-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -51,6 +53,11 @@ function ObrigadoContent() {
             customerId,
             subscriptionId,
             email,
+            asaasConfig: {
+              apiKey: localAsaasConfig.apiKey,
+              environment: localAsaasConfig.environment,
+              customBaseUrl: localAsaasConfig.customBaseUrl,
+            },
           }),
         });
         const data = await res.json();
@@ -103,6 +110,7 @@ function ObrigadoContent() {
     setIsCheckingPayment(true);
     setStatusMessage(null);
     try {
+      const localAsaasConfig = getAsaasConfig();
       const res = await fetch('/api/asaas/check-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -110,6 +118,11 @@ function ObrigadoContent() {
           customerId,
           subscriptionId,
           email,
+          asaasConfig: {
+            apiKey: localAsaasConfig.apiKey,
+            environment: localAsaasConfig.environment,
+            customBaseUrl: localAsaasConfig.customBaseUrl,
+          },
         }),
       });
       const data = await res.json();

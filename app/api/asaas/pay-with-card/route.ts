@@ -21,13 +21,21 @@ export async function POST(req: NextRequest) {
     } = body;
 
     const mergedAsaasConfig = { ...getAsaasConfig(), ...clientAsaasConfig };
-    const apiKey = (mergedAsaasConfig.apiKey || process.env.ASAAS_API_KEY || '').trim();
+    const apiKey = (
+      mergedAsaasConfig.apiKey || 
+      process.env.ASAAS_API_KEY || 
+      process.env.NEXT_PUBLIC_ASAAS_API_KEY || 
+      process.env.ASAAS_ACCESS_TOKEN || 
+      process.env.ASAAS_KEY || 
+      process.env.ASAAS_TOKEN || 
+      ''
+    ).trim();
     const baseUrl = getAsaasBaseUrl(apiKey, mergedAsaasConfig.environment, mergedAsaasConfig.customBaseUrl);
 
     if (!apiKey) {
       return NextResponse.json({
         success: false,
-        error: 'Chave do Asaas não configurada no servidor.',
+        error: 'Chave do Asaas não configurada no servidor. Configure a variável ASAAS_API_KEY no arquivo .env ou no Painel Admin > Asaas.',
       }, { status: 400 });
     }
 

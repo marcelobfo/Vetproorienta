@@ -6,7 +6,15 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { customer, apiKey: clientApiKey, environment, customBaseUrl } = body;
 
-    const apiKey = (process.env.ASAAS_API_KEY || clientApiKey || '').trim();
+    const apiKey = (
+      clientApiKey || 
+      process.env.ASAAS_API_KEY || 
+      process.env.NEXT_PUBLIC_ASAAS_API_KEY || 
+      process.env.ASAAS_ACCESS_TOKEN || 
+      process.env.ASAAS_KEY || 
+      process.env.ASAAS_TOKEN || 
+      ''
+    ).trim();
     const baseUrl = getAsaasBaseUrl(apiKey, environment, customBaseUrl);
 
     if (!apiKey) {

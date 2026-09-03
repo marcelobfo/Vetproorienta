@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient, getSupabaseAdminClient, isSupabaseConfigured } from '@/lib/supabase';
-import { directCreateAsaasCustomer, directCreateAsaasSubscription, getAsaasBaseUrl, getAsaasApiKey } from '@/lib/asaas';
+import { 
+  directCreateAsaasCustomer, 
+  directCreateAsaasSubscription, 
+  getAsaasBaseUrl, 
+  getAsaasApiKey,
+  getAsaasConfig,
+} from '@/lib/asaas';
 
 /**
  * Envia mensagem pelo Evolution API instalado (servidor / WhatsApp)
@@ -93,6 +99,7 @@ export async function POST(req: NextRequest) {
     // -------------------------------------------------------------
     // 1. Criar ou Recuperar Cliente no Asaas
     // -------------------------------------------------------------
+    const mergedAsaasConfig = { ...getAsaasConfig(), ...clientAsaasConfig };
     let asaasCustomerId = '';
     let asaasCustomerResult: any = null;
     let asaasCustomerError: string | null = null;
@@ -106,7 +113,7 @@ export async function POST(req: NextRequest) {
           mobilePhone: rawPhone || undefined,
           externalReference: `tutor_${rawCpf}`,
         },
-        clientAsaasConfig
+        mergedAsaasConfig
       );
 
       if (asaasRes.success && asaasRes.customer) {
@@ -149,7 +156,7 @@ export async function POST(req: NextRequest) {
             description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta (R$ ${numericPrice.toFixed(2)}/mês)`,
             externalReference: `sub_${planId || 'essencial'}_${rawCpf}`,
           },
-          clientAsaasConfig
+          mergedAsaasConfig
         );
 
         if (subRes.success && subRes.subscription) {

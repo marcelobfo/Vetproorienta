@@ -89,7 +89,14 @@ export function getAsaasBaseUrl(
 }
 
 export function getAsaasApiKey(): string {
-  let key = (process.env.ASAAS_API_KEY || '').trim();
+  let key = (
+    process.env.ASAAS_API_KEY || 
+    process.env.NEXT_PUBLIC_ASAAS_API_KEY || 
+    process.env.ASAAS_ACCESS_TOKEN || 
+    process.env.ASAAS_KEY || 
+    process.env.ASAAS_TOKEN || 
+    ''
+  ).trim();
   if (typeof window !== 'undefined') {
     const localApiKey = localStorage.getItem('vetpro_asaas_apikey');
     if (localApiKey && localApiKey.trim()) key = localApiKey.trim();
@@ -166,15 +173,27 @@ export interface AsaasSubscriptionResponse {
 }
 
 export const getAsaasConfig = (): AsaasConfig => {
-  let apiKey = (process.env.ASAAS_API_KEY || '').trim();
-  let webhookAuthToken = (process.env.ASAAS_WEBHOOK_AUTH_TOKEN || '').trim();
+  let apiKey = (
+    process.env.ASAAS_API_KEY || 
+    process.env.NEXT_PUBLIC_ASAAS_API_KEY || 
+    process.env.ASAAS_ACCESS_TOKEN || 
+    process.env.ASAAS_KEY || 
+    process.env.ASAAS_TOKEN || 
+    ''
+  ).trim();
+  let webhookAuthToken = (
+    process.env.ASAAS_WEBHOOK_AUTH_TOKEN || 
+    process.env.NEXT_PUBLIC_ASAAS_WEBHOOK_AUTH_TOKEN || 
+    process.env.ASAAS_WEBHOOK_TOKEN || 
+    ''
+  ).trim();
   let environment: 'auto' | 'sandbox' | 'production' | 'custom' = (
     process.env.ASAAS_ENVIRONMENT || 
     process.env.ASAAS_ENV || 
     process.env.NEXT_PUBLIC_ASAAS_ENVIRONMENT || 
     'auto'
   ) as any;
-  let customBaseUrl = (process.env.ASAAS_BASE_URL || '').trim();
+  let customBaseUrl = (process.env.ASAAS_BASE_URL || process.env.NEXT_PUBLIC_ASAAS_BASE_URL || '').trim();
   let notificationDisabled = process.env.ASAAS_NOTIFICATION_DISABLED === 'true';
   let defaultCycle: AsaasCycle = (process.env.ASAAS_DEFAULT_CYCLE as any) || 'MONTHLY';
   let dueDaysOffset = process.env.ASAAS_DUE_DAYS ? parseInt(process.env.ASAAS_DUE_DAYS, 10) : 1;
@@ -200,10 +219,10 @@ export const getAsaasConfig = (): AsaasConfig => {
     const localPriceEspecialista = localStorage.getItem('vetpro_asaas_price_especialista');
     const localDesc = localStorage.getItem('vetpro_asaas_invoice_desc');
 
-    if (localApiKey) apiKey = localApiKey;
-    if (localToken) webhookAuthToken = localToken;
+    if (localApiKey && localApiKey.trim()) apiKey = localApiKey.trim();
+    if (localToken && localToken.trim()) webhookAuthToken = localToken.trim();
     if (localEnv) environment = localEnv as any;
-    if (localCustomUrl) customBaseUrl = localCustomUrl;
+    if (localCustomUrl) customBaseUrl = localCustomUrl.trim();
     if (localNotif !== null) notificationDisabled = localNotif === 'true';
     if (localCycle) defaultCycle = localCycle as AsaasCycle;
     if (localDue !== null && localDue !== '') {
@@ -765,6 +784,7 @@ export async function verifyAndUnlockSubscription(params: {
   subscriptionId?: string;
   email?: string;
   userId?: string;
+  asaasConfig?: Partial<AsaasConfig>;
 }): Promise<{
   success: boolean;
   paid: boolean;
@@ -779,6 +799,13 @@ export async function verifyAndUnlockSubscription(params: {
   details?: any;
 }> {
   try {
+    const clientAsaasConfig = params.asaasConfig || (typeof window !== 'undefined' ? getAsaasConfig() : undefined);
+    const clientSupabaseConfig = typeof window !== 'undefined' ? {
+      url: localStorage.getItem('vetpro_supabase_url') || undefined,
+      anonKey: localStorage.getItem('vetpro_supabase_anon_key') || undefined,
+      serviceRoleKey: localStorage.getItem('vetpro_supabase_service_key') || undefined,
+    } : undefined;
+
     const res = await fetch('/api/asaas/check-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -787,6 +814,8 @@ export async function verifyAndUnlockSubscription(params: {
         subscriptionId: params.subscriptionId || (typeof window !== 'undefined' ? localStorage.getItem('vetpro_asaas_subscription_id') : undefined),
         email: params.email || (typeof window !== 'undefined' ? localStorage.getItem('vetpro_tutor_email') : undefined),
         userId: params.userId,
+        asaasConfig: clientAsaasConfig,
+        supabaseConfig: clientSupabaseConfig,
       }),
     });
 
