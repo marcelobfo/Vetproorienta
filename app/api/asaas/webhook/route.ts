@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import { sendAccessLiberatedWhatsApp } from '@/lib/whatsappNotification';
 
 // Eventos de webhook suportados pelo Asaas
 // PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_OVERDUE, PAYMENT_DELETED, PAYMENT_REFUNDED
@@ -73,17 +74,30 @@ export async function POST(req: NextRequest) {
       planStatus = 'INACTIVE';
     }
 
-    // 3. Atualiza no Supabase (se configurado)
+    // 3. Atualiza no Supabase e dispara mensagem de WhatsApp (se configurado)
+    let userProfile: any = null;
     if (isSupabaseConfigured() && customerId) {
       try {
         const supabase = getSupabaseClient();
         
+        // Busca perfil do usuário
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('asaas_customer_id', customerId)
+          .limit(1);
+
+        if (profiles && profiles.length > 0) {
+          userProfile = profiles[0];
+        }
+
         // Atualiza perfil do usuário que possui o asaas_customer_id
         await supabase
           .from('user_profiles')
           .update({
             subscription_status: planStatus,
             asaas_subscription_id: subscriptionId || null,
+            last_payment_date: planStatus === 'ACTIVE' ? new Date().toISOString() : undefined,
             updated_at: new Date().toISOString(),
           })
           .eq('asaas_customer_id', customerId);
@@ -99,6 +113,30 @@ export async function POST(req: NextRequest) {
           }]);
       } catch (dbErr) {
         console.warn('[ASAAS WEBHOOK] Falha ao persistir evento no Supabase:', dbErr);
+      }
+    }
+
+    // 4. Se o pagamento foi aprovado, dispara mensagem de boas-vindas com login e senha liberados
+    if (planStatus === 'ACTIVE') {
+      const targetPhone = userProfile?.phone || payment?.customerPhone || payment?.mobilePhone;
+      const targetEmail = userProfile?.email || payment?.customerEmail;
+      const targetName = userProfile?.full_name || userProfile?.name || payment?.customerName || 'Tutor';
+      const targetCpf = userProfile?.cpf || userProfile?.cpf_cnpj || payment?.customerCpfCnpj || '';
+      const planName = userProfile?.plan_name || userProfile?.plan_selected || 'Essencial';
+
+      if (targetPhone && targetEmail) {
+        try {
+          await sendAccessLiberatedWhatsApp({
+            phone: targetPhone,
+            name: targetName,
+            email: targetEmail,
+            cpf: targetCpf,
+            planName,
+          });
+          console.log(`[ASAAS WEBHOOK] Acesso liberado enviado via WhatsApp para ${targetPhone}`);
+        } catch (waErr) {
+          console.warn('[ASAAS WEBHOOK] Falha ao enviar WhatsApp de liberação:', waErr);
+        }
       }
     }
 

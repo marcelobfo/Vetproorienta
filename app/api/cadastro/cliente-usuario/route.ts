@@ -7,55 +7,7 @@ import {
   getAsaasApiKey,
   getAsaasConfig,
 } from '@/lib/asaas';
-
-/**
- * Envia mensagem pelo Evolution API instalado (servidor / WhatsApp)
- */
-async function sendWhatsAppMessage(toPhone: string, text: string) {
-  let phone = toPhone.replace(/\D/g, '');
-  if (!phone || phone.length < 10) return { success: false, error: 'Telefone inválido' };
-
-  if (phone.length === 10 || phone.length === 11) {
-    phone = `55${phone}`;
-  }
-
-  const serverUrl = (process.env.EVOLUTION_SERVER_URL || '').replace(/\/+$/, '');
-  const apiKey = process.env.EVOLUTION_API_KEY || '';
-  const instanceName = process.env.EVOLUTION_DEFAULT_INSTANCE || 'vetpro-clinica';
-
-  if (!serverUrl) {
-    console.warn('[WhatsApp] Servidor Evolution API não configurado.');
-    return { success: false, error: 'Servidor Evolution não configurado' };
-  }
-
-  try {
-    const targetUrl = `${serverUrl}/message/sendText/${encodeURIComponent(instanceName)}`;
-    const res = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: apiKey,
-      },
-      body: JSON.stringify({
-        number: phone,
-        text,
-        delay: 1200,
-        linkPreview: true,
-      }),
-    });
-
-    let data: any;
-    try {
-      data = await res.json();
-    } catch {
-      data = { raw: await res.text() };
-    }
-    return { success: res.ok, data };
-  } catch (err: any) {
-    console.error('[WhatsApp] Erro ao enviar mensagem WhatsApp:', err);
-    return { success: false, error: err.message || 'Erro ao enviar mensagem WhatsApp' };
-  }
-}
+import { sendPixOnboardingWhatsApp } from '@/lib/whatsappNotification';
 
 export async function POST(req: NextRequest) {
   try {
@@ -71,6 +23,7 @@ export async function POST(req: NextRequest) {
       dueDaysOffset,
       asaasConfig: clientAsaasConfig,
       supabaseConfig: clientSupabaseConfig,
+      evolutionConfig: clientEvolutionConfig,
     } = body;
 
     const trimmedName = (name || '').trim();
@@ -370,39 +323,29 @@ export async function POST(req: NextRequest) {
     }
 
     // -------------------------------------------------------------
-    // 4. Enviar WhatsApp via Evolution API com o Link de Checkout do Asaas
-    // Mensagem de boas-vindas informando sobre a assinatura gerada e link para pagamento
+    // 4. Enviar WhatsApp via Evolution API com QR Code e Pix Copia e Cola
+    // Mensagem de boas-vindas com QR Code do Pix, chave Pix Copia e Cola e checkout Asaas
     // -------------------------------------------------------------
     let whatsappSent = false;
-    let whatsappResponse: any = null;
+    let whatsappDetails: any = null;
 
     if (rawPhone) {
-      const firstName = trimmedName.split(' ')[0];
-      
-      let messageText = `Olá, *${firstName}*! 🐾 Seja muito bem-vindo(a) ao *VetPro Orienta*!\n\n` +
-        `Recebemos seu cadastro para o *Plano ${selectedPlanName}* (R$ ${numericPrice.toFixed(2).replace('.', ',')}/mês).\n\n` +
-        `📋 *Sua conta foi criada no sistema* e seus dados de acesso são:\n` +
-        `• *Login (E-mail):* ${trimmedEmail}\n` +
-        `• *Senha inicial:* ${rawCpf} *(seu CPF, apenas números)*\n\n` +
-        `🔒 *Ativação do Acesso:*\n` +
-        `Seu acesso completo à triagem veterinária inteligente e prontuários será liberado instantaneamente após a confirmação do pagamento da primeira mensalidade.\n\n`;
+      const waResult = await sendPixOnboardingWhatsApp({
+        phone: rawPhone,
+        name: trimmedName,
+        email: trimmedEmail,
+        cpf: rawCpf,
+        planName: selectedPlanName,
+        planPrice: numericPrice,
+        pixCopiaECola,
+        pixQrCodeImage,
+        paymentUrl,
+        dueDate: paymentDueDate,
+        evolutionConfig: clientEvolutionConfig,
+      });
 
-      if (pixCopiaECola) {
-        messageText += `🔑 *Chave Pix Copia e Cola (Pagamento Imediato):*\n\`\`\`${pixCopiaECola}\`\`\`\n\n`;
-      }
-
-      if (paymentUrl) {
-        messageText += `💳 *Ou acerte por Cartão / Boleto / Pix pelo checkout Asaas:*\n${paymentUrl}\n\n`;
-      } else {
-        messageText += `💳 *Fatura gerada no Asaas com sucesso.* Você receberá os detalhes da cobrança também por e-mail.\n\n`;
-      }
-
-      messageText += `Assim que o pagamento for compensado, você receberá uma nova confirmação aqui no WhatsApp e poderá entrar em https://vetpro-orienta.app/login para cadastrar seus pets.\n\n` +
-        `Dúvidas? Estamos à disposição! 🐶🐱`;
-
-      const waResult = await sendWhatsAppMessage(rawPhone, messageText);
-      whatsappSent = waResult.success;
-      whatsappResponse = waResult;
+      whatsappSent = waResult.textSent;
+      whatsappDetails = waResult;
     }
 
     return NextResponse.json({
@@ -434,9 +377,9 @@ export async function POST(req: NextRequest) {
       },
       whatsapp: {
         sent: whatsappSent,
-        details: whatsappResponse,
+        details: whatsappDetails,
       },
-      message: 'Cadastro e usuário processados com sucesso! Link de checkout e instruções enviadas via WhatsApp.',
+      message: 'Cadastro e usuário processados com sucesso! QR Code do Pix e código Copia e Cola enviados via WhatsApp.',
     });
   } catch (err: any) {
     console.error('Erro na rota /api/cadastro/cliente-usuario:', err);

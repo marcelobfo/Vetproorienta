@@ -239,6 +239,39 @@ export async function POST(req: NextRequest) {
         };
         break;
 
+      case 'send-media':
+      case 'send-image':
+        if (!instanceName) {
+          return NextResponse.json({ error: 'Nome da instância do WhatsApp é obrigatório.' }, { status: 400 });
+        }
+        if (!data?.number || (!data?.media && !data?.image && !data?.mediaUrl)) {
+          return NextResponse.json({ error: 'Número e mídia/imagem são obrigatórios para envio.' }, { status: 400 });
+        }
+        let mediaPhone = data.number.toString().replace(/\D/g, '');
+        if (mediaPhone.length === 10 || mediaPhone.length === 11) {
+          mediaPhone = `55${mediaPhone}`;
+        }
+        targetUrl = `${baseUrl}/message/sendMedia/${encodeURIComponent(instanceName)}`;
+        method = 'POST';
+        payload = {
+          number: mediaPhone,
+          mediatype: data.mediatype || data.mediaType || 'image',
+          mimetype: data.mimetype || data.mimeType || 'image/png',
+          caption: data.caption || data.text || '',
+          media: data.media || data.image || data.mediaUrl,
+          fileName: data.fileName || 'qrcode-pix.png',
+          delay: data.delay || 1200,
+          // Payload v1/v2 compatibility
+          mediaMessage: {
+            mediatype: data.mediatype || data.mediaType || 'image',
+            mimetype: data.mimetype || data.mimeType || 'image/png',
+            caption: data.caption || data.text || '',
+            media: data.media || data.image || data.mediaUrl,
+            fileName: data.fileName || 'qrcode-pix.png',
+          },
+        };
+        break;
+
       default:
         return NextResponse.json({ error: `Ação '${action}' não reconhecida.` }, { status: 400 });
     }

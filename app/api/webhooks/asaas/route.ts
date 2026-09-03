@@ -1,55 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getAsaasApiKey } from '@/lib/asaas';
-
-/**
- * Envia mensagem pelo Evolution API instalado (servidor / WhatsApp)
- */
-async function sendWhatsAppMessage(toPhone: string, text: string) {
-  let phone = toPhone.replace(/\D/g, '');
-  if (!phone || phone.length < 10) return { success: false, error: 'Telefone inválido' };
-
-  if (phone.length === 10 || phone.length === 11) {
-    phone = `55${phone}`;
-  }
-
-  const serverUrl = (process.env.EVOLUTION_SERVER_URL || '').replace(/\/+$/, '');
-  const apiKey = process.env.EVOLUTION_API_KEY || '';
-  const instanceName = process.env.EVOLUTION_DEFAULT_INSTANCE || 'vetpro-clinica';
-
-  if (!serverUrl) {
-    console.warn('[Webhook Asaas WhatsApp] Servidor Evolution API não configurado.');
-    return { success: false, error: 'Servidor Evolution não configurado' };
-  }
-
-  try {
-    const targetUrl = `${serverUrl}/message/sendText/${encodeURIComponent(instanceName)}`;
-    const res = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: apiKey,
-      },
-      body: JSON.stringify({
-        number: phone,
-        text,
-        delay: 1200,
-        linkPreview: true,
-      }),
-    });
-
-    let data: any;
-    try {
-      data = await res.json();
-    } catch {
-      data = { raw: await res.text() };
-    }
-    return { success: res.ok, data };
-  } catch (err: any) {
-    console.error('[Webhook Asaas WhatsApp] Erro ao enviar mensagem WhatsApp:', err);
-    return { success: false, error: err.message || 'Erro ao enviar mensagem WhatsApp' };
-  }
-}
+import { sendAccessLiberatedWhatsApp } from '@/lib/whatsappNotification';
 
 /**
  * Rota para receber Webhooks do Asaas (ex: pagamento confirmado, assinatura renovada, etc.)
@@ -123,28 +75,19 @@ export async function POST(req: NextRequest) {
       // 2. Se temos os dados do tutor (seja pelo banco ou pelos metadados do webhook), envia o WhatsApp de liberação com usuário e senha
       const customerPhone = tutorProfile?.phone || payment?.customerPhone || payment?.mobilePhone;
       const customerEmail = tutorProfile?.email || payment?.customerEmail;
-      const customerName = tutorProfile?.full_name || payment?.customerName || 'Tutor';
-      const customerCpf = tutorProfile?.cpf || payment?.customerCpfCnpj || '';
+      const customerName = tutorProfile?.full_name || tutorProfile?.name || payment?.customerName || 'Tutor';
+      const customerCpf = tutorProfile?.cpf || tutorProfile?.cpf_cnpj || payment?.customerCpfCnpj || '';
+      const planName = tutorProfile?.plan_name || tutorProfile?.plan_selected || 'Essencial';
 
-      if (customerPhone) {
-        const firstName = customerName.split(' ')[0];
-        const initialPassword = customerCpf || 'Seu CPF (apenas números)';
-
-        const activeMessage = 
-          `🎉 *Parabéns, ${firstName}! Seu pagamento foi confirmado com sucesso!*\n\n` +
-          `Sua assinatura do *VetPro Orienta* está oficialmente *ATIVA* e seus módulos de triagem com IA estão 100% liberados! 🚀🐾\n\n` +
-          `🔐 *SEUS DADOS OFICIAIS DE ACESSO:*\n` +
-          `• *Painel:* https://vetpro-orienta.app/login\n` +
-          `• *Usuário (E-mail):* ${customerEmail || 'Seu e-mail cadastrado'}\n` +
-          `• *Senha de Acesso:* ${initialPassword}\n\n` +
-          `💡 *Próximos Passos:*\n` +
-          `1. Acesse o link acima e faça seu login.\n` +
-          `2. Cadastre a ficha dos seus pets (cão/gato, raça, idade e histórico).\n` +
-          `3. Inicie triagens clínicas com IA sempre que precisar de orientação rápida!\n\n` +
-          `Muito obrigado pela confiança! Conte sempre conosco para cuidar da saúde do seu pet! ❤️`;
-
-        await sendWhatsAppMessage(customerPhone, activeMessage);
-        console.log(`[AUDIT LOG] Mensagem de liberação enviada para o WhatsApp: ${customerPhone}`);
+      if (customerPhone && customerEmail) {
+        const waResult = await sendAccessLiberatedWhatsApp({
+          phone: customerPhone,
+          name: customerName,
+          email: customerEmail,
+          cpf: customerCpf,
+          planName,
+        });
+        console.log(`[AUDIT LOG] Mensagem de liberação enviada para o WhatsApp: ${customerPhone} (Resultado: ${waResult.success})`);
       }
     } else if (isPaymentOverdue) {
       // Caso de inadimplência: bloquear acesso no Supabase

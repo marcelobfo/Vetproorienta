@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAsaasBaseUrl, getAsaasApiKey } from '@/lib/asaas';
 import { getSupabaseAdminClient, getSupabaseClient } from '@/lib/supabase';
+import { sendAccessLiberatedWhatsApp } from '@/lib/whatsappNotification';
 
 /**
  * Endpoint para aprovar/confirmar faturas de teste no Sandbox do Asaas
@@ -17,7 +18,8 @@ export async function POST(req: NextRequest) {
       userId, 
       email, 
       asaasConfig, 
-      supabaseConfig 
+      supabaseConfig,
+      evolutionConfig,
     } = body;
 
     const apiKey = (
@@ -118,14 +120,30 @@ export async function POST(req: NextRequest) {
     const customSupabaseServiceKey = supabaseConfig?.serviceRoleKey || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     let dbUpdated = false;
+    let tutorProfile: any = null;
     if (customSupabaseUrl && (customSupabaseServiceKey || customSupabaseAnonKey)) {
       try {
         const adminClient = getSupabaseAdminClient(customSupabaseUrl, customSupabaseServiceKey);
         const supabase = adminClient || getSupabaseClient(customSupabaseUrl, customSupabaseAnonKey);
 
+        // Busca perfil existente antes de atualizar
+        let selectQuery = supabase.from('user_profiles').select('*');
+        if (userId) {
+          selectQuery = selectQuery.eq('id', userId);
+        } else if (email) {
+          selectQuery = selectQuery.eq('email', email.toLowerCase().trim());
+        } else if (customerId) {
+          selectQuery = selectQuery.eq('asaas_customer_id', customerId);
+        } else if (subscriptionId) {
+          selectQuery = selectQuery.eq('subscription_id', subscriptionId);
+        }
+        const { data: profileData } = await selectQuery.maybeSingle();
+        if (profileData) tutorProfile = profileData;
+
         const updatePayload: any = {
           subscription_status: 'ACTIVE',
           status: 'active',
+          last_payment_date: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
 
@@ -149,12 +167,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Dispara notificação no WhatsApp com os dados de acesso (login e senha)
+    let whatsappResult: any = null;
+    const targetPhone = tutorProfile?.phone || confirmJson?.customerPhone || confirmJson?.mobilePhone;
+    const targetEmail = tutorProfile?.email || email || confirmJson?.customerEmail;
+    const targetName = tutorProfile?.full_name || tutorProfile?.name || confirmJson?.customerName || 'Tutor';
+    const targetCpf = tutorProfile?.cpf || tutorProfile?.cpf_cnpj || confirmJson?.customerCpfCnpj || '';
+    const planName = tutorProfile?.plan_name || tutorProfile?.plan_selected || 'Essencial';
+
+    if (targetPhone && targetEmail) {
+      try {
+        whatsappResult = await sendAccessLiberatedWhatsApp({
+          phone: targetPhone,
+          name: targetName,
+          email: targetEmail,
+          cpf: targetCpf,
+          planName,
+          evolutionConfig,
+        });
+      } catch (waErr: any) {
+        console.warn('[Sandbox Confirm] Falha ao enviar WhatsApp de liberação:', waErr.message);
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Pagamento confirmado com sucesso no Sandbox do Asaas! Assinatura ativada.',
+      message: 'Pagamento confirmado com sucesso no Sandbox do Asaas! Assinatura ativada e dados de acesso enviados no WhatsApp.',
       payment: confirmJson,
       paymentId: targetPaymentId,
       dbUpdated,
+      whatsapp: whatsappResult,
     });
   } catch (err: any) {
     console.error('Erro na rota /api/asaas/sandbox-confirm:', err);

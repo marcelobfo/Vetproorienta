@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createAsaasCustomer, createAsaasSubscription, getAsaasConfig } from '@/lib/asaas';
+import { getEvolutionConfig } from '@/lib/evolution';
 import { PartnerRotativeAds } from '@/components/PartnerRotativeAds';
 import { supabase } from '@/lib/supabase';
 import { triggerPWAInstallModal } from '@/components/PwaInstallPrompt';
@@ -184,13 +185,14 @@ export default function LandingPage() {
     setIsSubmitting(true);
 
     try {
-      // Obtém configurações locais de Asaas e Supabase para garantir que o backend utilize as credenciais configuradas
+      // Obtém configurações locais de Asaas, Supabase e Evolution para garantir que o backend utilize as credenciais configuradas
       const localAsaasConfig = getAsaasConfig();
+      const localEvolutionConfig = getEvolutionConfig();
       const localSupabaseUrl = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_url') : '';
       const localSupabaseAnonKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_anon_key') : '';
       const localSupabaseServiceKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_service_key') : '';
 
-      // Chama o endpoint unificado de cadastro: cria cliente no Asaas, cria assinatura, cria usuário no banco com senha=CPF e envia WhatsApp com checkout
+      // Chama o endpoint unificado de cadastro: cria cliente no Asaas, cria assinatura, cria usuário no banco com senha=CPF e envia WhatsApp com QR Code Pix
       const regRes = await fetch('/api/cadastro/cliente-usuario', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -212,6 +214,11 @@ export default function LandingPage() {
             url: localSupabaseUrl,
             anonKey: localSupabaseAnonKey,
             serviceRoleKey: localSupabaseServiceKey,
+          },
+          evolutionConfig: {
+            serverUrl: localEvolutionConfig.serverUrl,
+            apiKey: localEvolutionConfig.apiKey,
+            instanceName: localEvolutionConfig.defaultInstance,
           },
         }),
       });

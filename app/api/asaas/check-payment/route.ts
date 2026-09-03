@@ -2,11 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import QRCode from 'qrcode';
 import { getSupabaseClient, getSupabaseAdminClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getAsaasBaseUrl, getAsaasConfig } from '@/lib/asaas';
+import { sendAccessLiberatedWhatsApp } from '@/lib/whatsappNotification';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { customerId, subscriptionId, email, userId, asaasConfig: clientAsaasConfig, supabaseConfig: clientSupabaseConfig } = body;
+    const { 
+      customerId, 
+      subscriptionId, 
+      email, 
+      userId, 
+      asaasConfig: clientAsaasConfig, 
+      supabaseConfig: clientSupabaseConfig,
+      evolutionConfig: clientEvolutionConfig,
+    } = body;
 
     let targetCustomerId = customerId;
     let targetSubscriptionId = subscriptionId;
@@ -154,11 +163,20 @@ export async function POST(req: NextRequest) {
     );
 
     if (paidPayment) {
+      let resolvedProfile: any = null;
       // Atualiza Supabase
       if (isSupabaseConfigured(customSupabaseUrl, customSupabaseAnonKey || customSupabaseServiceKey) && (targetUserId || targetEmail || targetCustomerId)) {
         try {
           const adminClient = getSupabaseAdminClient(customSupabaseUrl, customSupabaseServiceKey);
           const supabase = adminClient || getSupabaseClient(customSupabaseUrl, customSupabaseAnonKey);
+
+          let selQuery = supabase.from('user_profiles').select('*');
+          if (targetUserId) selQuery = selQuery.eq('id', targetUserId);
+          else if (targetEmail) selQuery = selQuery.eq('email', targetEmail);
+          else if (targetCustomerId) selQuery = selQuery.eq('asaas_customer_id', targetCustomerId);
+          const { data: profData } = await selQuery.maybeSingle();
+          if (profData) resolvedProfile = profData;
+
           let upd = supabase.from('user_profiles').update({
             status: 'active',
             subscription_status: 'ACTIVE',
@@ -173,6 +191,28 @@ export async function POST(req: NextRequest) {
           await upd;
         } catch (dbErr: any) {
           console.warn('Erro ao atualizar Supabase após detecção de pagamento:', dbErr.message);
+        }
+      }
+
+      // Se o tutor ainda não havia recebido a mensagem de ativação
+      const targetPhone = resolvedProfile?.phone || paidPayment.customerPhone || paidPayment.mobilePhone;
+      const targetName = resolvedProfile?.full_name || resolvedProfile?.name || paidPayment.customerName || 'Tutor';
+      const targetEmailResolved = resolvedProfile?.email || targetEmail || paidPayment.customerEmail;
+      const targetCpf = resolvedProfile?.cpf || resolvedProfile?.cpf_cnpj || paidPayment.customerCpfCnpj || '';
+      const planName = resolvedProfile?.plan_name || resolvedProfile?.plan_selected || 'Essencial';
+
+      if (targetPhone && targetEmailResolved) {
+        try {
+          await sendAccessLiberatedWhatsApp({
+            phone: targetPhone,
+            name: targetName,
+            email: targetEmailResolved,
+            cpf: targetCpf,
+            planName,
+            evolutionConfig: clientEvolutionConfig,
+          });
+        } catch (waErr: any) {
+          console.warn('[Check Payment] Falha ao enviar WhatsApp de liberação:', waErr.message);
         }
       }
 
