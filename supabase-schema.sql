@@ -54,9 +54,23 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
   tenant_id UUID REFERENCES public.tenants(id) ON DELETE SET NULL,
   role TEXT DEFAULT 'tutor' CHECK (role IN ('super_admin', 'admin', 'veterinario', 'tutor')),
   full_name TEXT NOT NULL,
+  name TEXT,
   email TEXT,
   phone TEXT,
+  cpf TEXT,
   cpf_cnpj TEXT,
+  
+  -- Campos de Endereço e Contato Completo do Tutor:
+  street TEXT,                   -- Logradouro / Rua / Avenida
+  number TEXT,                   -- Número
+  complement TEXT,               -- Complemento (Apto, Bloco, etc.)
+  neighborhood TEXT,             -- Bairro
+  city TEXT,                     -- Cidade
+  state TEXT,                    -- Estado (UF ex: SP, RJ)
+  cep TEXT,                      -- CEP formatado
+  emergency_contact TEXT,        -- Nome e telefone de emergência
+  notes TEXT,                    -- Observações cadastrais
+  avatar_url TEXT,               -- Foto de perfil
   
   -- Campos exclusivos para Médicos Veterinários:
   crmv TEXT,                    -- Ex: '12345'
@@ -67,8 +81,11 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
   -- Campos para Integração Financeira Asaas:
   asaas_customer_id TEXT,
   asaas_subscription_id TEXT,
-  subscription_status TEXT DEFAULT 'INACTIVE' CHECK (subscription_status IN ('ACTIVE', 'INACTIVE', 'PENDING', 'OVERDUE')),
+  subscription_id TEXT,
+  subscription_status TEXT DEFAULT 'INACTIVE' CHECK (subscription_status IN ('ACTIVE', 'INACTIVE', 'PENDING', 'PENDING_PAYMENT', 'OVERDUE', 'CONFIRMED', 'RECEIVED')),
+  plan_name TEXT,
   plan_selected TEXT,           -- 'essencial' | 'especialista'
+  plan_price NUMERIC(10,2) DEFAULT 9.90,
   
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -514,10 +531,22 @@ CREATE POLICY "Admins veem logs de auditoria" ON public.audit_logs
 
 -- Garantir que todas as colunas necessárias existam em tabelas criadas previamente
 ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS name TEXT;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS cpf TEXT;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS cpf_cnpj TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS street TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS number TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS complement TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS neighborhood TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS state TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS cep TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS emergency_contact TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS plan_name TEXT;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS plan_selected TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS plan_price NUMERIC(10,2) DEFAULT 9.90;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS subscription_id TEXT;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS asaas_subscription_id TEXT;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS asaas_customer_id TEXT;

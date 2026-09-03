@@ -23,15 +23,30 @@ export async function POST(req: NextRequest) {
         const adminClient = getSupabaseAdminClient(customSupabaseUrl, customSupabaseServiceKey);
         const supabase = adminClient || getSupabaseClient(customSupabaseUrl, customSupabaseAnonKey);
         let query = supabase.from('user_profiles').select('*');
-        if (targetUserId) query = query.eq('id', targetUserId);
-        else if (targetEmail) query = query.eq('email', targetEmail);
-        else if (targetCustomerId) query = query.eq('asaas_customer_id', targetCustomerId);
-        else if (targetSubscriptionId) query = query.eq('asaas_subscription_id', targetSubscriptionId);
+        if (targetUserId) {
+          query = query.eq('id', targetUserId);
+        } else if (targetEmail) {
+          query = query.eq('email', targetEmail);
+        } else if (targetCustomerId) {
+          query = query.eq('asaas_customer_id', targetCustomerId);
+        } else if (targetSubscriptionId) {
+          query = query.eq('asaas_subscription_id', targetSubscriptionId);
+        }
 
         const { data: profile } = await query.maybeSingle();
         if (profile) {
-          if (!targetCustomerId && profile.asaas_customer_id) targetCustomerId = profile.asaas_customer_id;
-          if (!targetSubscriptionId) targetSubscriptionId = profile.asaas_subscription_id || profile.subscription_id;
+          // Sempre prioriza os IDs reais do perfil do usuário para evitar vazamento entre contas
+          if (profile.asaas_customer_id) {
+            targetCustomerId = profile.asaas_customer_id;
+          } else if (targetEmail && profile.email === targetEmail) {
+            // Se o perfil não tem asaas_customer_id, não herda customerId solto de outro usuário!
+            targetCustomerId = '';
+          }
+          if (profile.asaas_subscription_id || profile.subscription_id) {
+            targetSubscriptionId = profile.asaas_subscription_id || profile.subscription_id;
+          } else if (targetEmail && profile.email === targetEmail) {
+            targetSubscriptionId = '';
+          }
           if (!targetUserId) targetUserId = profile.id;
           if (!targetEmail && profile.email) targetEmail = profile.email;
 

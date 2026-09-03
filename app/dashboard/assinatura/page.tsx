@@ -216,20 +216,18 @@ export default function AssinaturaPage() {
 
             if (profile.plan_id) setPlanId(profile.plan_id);
             if (profile.plan_name) setPlanName(profile.plan_name);
-            if (profile.asaas_customer_id) {
-              setCustomerId(profile.asaas_customer_id);
-              activeCustId = profile.asaas_customer_id;
-            }
-            if (profile.subscription_id) {
-              setSubscriptionId(profile.subscription_id);
-              activeSubId = profile.subscription_id;
-            }
+            
+            // Define o customerId estritamente a partir do perfil do usuário logado
+            const realCustId = profile.asaas_customer_id || '';
+            const realSubId = profile.subscription_id || '';
+            setCustomerId(realCustId);
+            setSubscriptionId(realSubId);
+            activeCustId = realCustId;
+            activeSubId = realSubId;
 
-            const subStatus = checkTutorSubscriptionStatus();
             const isDbActive = profile.subscription_status === 'ACTIVE' || profile.subscription_status === 'CONFIRMED' || profile.subscription_status === 'RECEIVED';
-            const isActive = isDbActive || subStatus.hasActivePlan;
-            setHasActivePlan(isActive);
-            setSubscriptionStatus(isActive ? 'ACTIVE' : (profile.subscription_status || 'PENDING_PAYMENT'));
+            setHasActivePlan(isDbActive);
+            setSubscriptionStatus(isDbActive ? 'ACTIVE' : (profile.subscription_status || 'PENDING_PAYMENT'));
             
             if (profile.plan_id === 'especialista' || profile.plan_name?.toLowerCase().includes('especialista')) {
               setPlanPrice(29.90);

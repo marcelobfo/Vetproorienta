@@ -5,7 +5,8 @@ import {
   Users, Stethoscope, Building, Plus, Search, Edit2, Trash2, 
   CheckCircle2, XCircle, MapPin, Phone, Mail, MessageCircle, 
   Sparkles, Star, Navigation, RefreshCw, X, ShieldCheck, AlertCircle,
-  ExternalLink, Globe, Smartphone, HeartPulse
+  ExternalLink, Globe, Smartphone, HeartPulse, QrCode, CreditCard,
+  Send, Copy, Check, Zap, AlertTriangle, ShieldAlert, Crown, Power
 } from 'lucide-react';
 import { 
   TutorRecord, VetRecord, getTutors, saveTutor, deleteTutor, 
@@ -17,7 +18,7 @@ import {
 import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
 import { SecurityDeleteModal } from '@/components/SecurityDeleteModal';
 import { isModuleActive, toggleSystemModule, SYSTEM_MODULE_KEYS } from '@/lib/moduleService';
-import { Crown, Power, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { getAsaasConfig } from '@/lib/asaas';
 
 export default function CentralCadastrosPage() {
   const [activeTab, setActiveTab] = useState<'tutores' | 'veterinarios' | 'parceiros'>('tutores');
@@ -37,6 +38,30 @@ export default function CentralCadastrosPage() {
     return isModuleActive(SYSTEM_MODULE_KEYS.PARCEIROS_GPS);
   });
   const [togglingModule, setTogglingModule] = useState(false);
+
+  // Modal de Cobrança / Sincronização Asaas do Tutor
+  const [invoiceModalState, setInvoiceModalState] = useState<{
+    isOpen: boolean;
+    tutor: TutorRecord | null;
+    loading: boolean;
+    invoiceUrl?: string;
+    pixQrCode?: string;
+    pixCopiaECola?: string;
+    bankSlipUrl?: string;
+    customerId?: string;
+    subscriptionId?: string;
+    status?: string;
+    value?: number;
+    planName?: string;
+    whatsappUrl?: string;
+    error?: string;
+    copied: boolean;
+  }>({
+    isOpen: false,
+    tutor: null,
+    loading: false,
+    copied: false,
+  });
 
   // Estados de Exclusão Segura
   const [deleteModalState, setDeleteModalState] = useState<{
@@ -157,6 +182,141 @@ export default function CentralCadastrosPage() {
     setIsTutorModalOpen(true);
   };
 
+  const handleGenerateAsaasForTutor = async (tutor: TutorRecord) => {
+    setInvoiceModalState({
+      isOpen: true,
+      tutor,
+      loading: true,
+      copied: false,
+    });
+
+    try {
+      const localAsaasConfig = getAsaasConfig();
+      const localSupabaseUrl = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_url') || '' : '';
+      const localSupabaseAnonKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_anon_key') || '' : '';
+      const localSupabaseServiceKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_service_key') || '' : '';
+
+      const planId = (tutor.plan_name || '').toLowerCase().includes('especialista') ? 'especialista' : 'essencial';
+      const planPrice = planId === 'especialista' ? 29.90 : 9.90;
+
+      const res = await fetch('/api/asaas/generate-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: tutor.id,
+          customerId: tutor.asaas_customer_id || undefined,
+          email: tutor.email,
+          name: tutor.name,
+          cpfCnpj: tutor.cpf || undefined,
+          phone: tutor.phone || undefined,
+          planId,
+          planName: tutor.plan_name || (planId === 'especialista' ? 'Especialista' : 'Essencial'),
+          planPrice,
+          forceNewCharge: true,
+          asaasConfig: {
+            apiKey: localAsaasConfig.apiKey,
+            environment: localAsaasConfig.environment,
+            customBaseUrl: localAsaasConfig.customBaseUrl,
+          },
+          supabaseConfig: {
+            url: localSupabaseUrl,
+            anonKey: localSupabaseAnonKey,
+            serviceRoleKey: localSupabaseServiceKey,
+          },
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setInvoiceModalState({
+          isOpen: true,
+          tutor,
+          loading: false,
+          invoiceUrl: data.invoiceUrl || data.paymentUrl,
+          pixQrCode: data.pixQrCodeImage,
+          pixCopiaECola: data.pixCopiaECola,
+          bankSlipUrl: data.bankSlipUrl,
+          customerId: data.customerId,
+          subscriptionId: data.subscriptionId,
+          status: data.status || 'PENDING',
+          value: data.value || planPrice,
+          planName: data.planName || tutor.plan_name,
+          whatsappUrl: data.whatsappUrl,
+          copied: false,
+        });
+
+        // Atualiza tutor localmente e recarrega
+        showToast('Cobrança gerada no Asaas com sucesso!');
+        loadAllData();
+      } else {
+        setInvoiceModalState(prev => ({
+          ...prev,
+          loading: false,
+          error: data.error || 'Erro ao sincronizar com o Asaas.',
+        }));
+        showToast(data.error || 'Erro ao sincronizar com o Asaas.', 'error');
+      }
+    } catch (err: any) {
+      setInvoiceModalState(prev => ({
+        ...prev,
+        loading: false,
+        error: err.message || 'Erro de conexão.',
+      }));
+      showToast('Erro de conexão ao gerar fatura.', 'error');
+    }
+  };
+
+  const handleApproveSandboxInInvoiceModal = async () => {
+    if (!invoiceModalState.tutor) return;
+    setInvoiceModalState(prev => ({ ...prev, loading: true }));
+
+    try {
+      const localAsaasConfig = getAsaasConfig();
+      const localSupabaseUrl = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_url') || '' : '';
+      const localSupabaseAnonKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_anon_key') || '' : '';
+      const localSupabaseServiceKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_service_key') || '' : '';
+
+      const res = await fetch('/api/asaas/sandbox-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: invoiceModalState.tutor.id,
+          email: invoiceModalState.tutor.email,
+          customerId: invoiceModalState.customerId || invoiceModalState.tutor.asaas_customer_id,
+          subscriptionId: invoiceModalState.subscriptionId,
+          asaasConfig: {
+            apiKey: localAsaasConfig.apiKey,
+            environment: localAsaasConfig.environment || 'sandbox',
+            customBaseUrl: localAsaasConfig.customBaseUrl,
+          },
+          supabaseConfig: {
+            url: localSupabaseUrl,
+            anonKey: localSupabaseAnonKey,
+            serviceRoleKey: localSupabaseServiceKey,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('Pagamento de teste APROVADO no Sandbox! Assinatura Ativa.');
+        setInvoiceModalState(prev => ({
+          ...prev,
+          loading: false,
+          status: 'ACTIVE',
+        }));
+        loadAllData();
+      } else {
+        showToast(data.error || 'Não foi possível aprovar no Sandbox.', 'error');
+        setInvoiceModalState(prev => ({ ...prev, loading: false }));
+      }
+    } catch (err: any) {
+      showToast('Erro ao conectar ao Sandbox.', 'error');
+      setInvoiceModalState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   const handleSaveTutor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tutorForm.name || !tutorForm.email) {
@@ -169,10 +329,15 @@ export default function CentralCadastrosPage() {
       ...tutorForm
     });
 
-    if (res.success) {
+    if (res.success && res.data) {
       showToast(editingTutor ? 'Tutor atualizado com sucesso!' : 'Tutor cadastrado com sucesso!');
       setIsTutorModalOpen(false);
       loadAllData();
+
+      // Se for novo tutor ou não tiver asaas_customer_id, já oferece sincronizar
+      if (!editingTutor && res.data.email) {
+        handleGenerateAsaasForTutor(res.data);
+      }
     } else {
       showToast(res.error || 'Erro ao salvar tutor.', 'error');
     }
@@ -628,55 +793,84 @@ export default function CentralCadastrosPage() {
                       <th className="p-4">Nome & Contato</th>
                       <th className="p-4">CPF</th>
                       <th className="p-4">Plano</th>
-                      <th className="p-4">Status</th>
+                      <th className="p-4">Status & Asaas</th>
                       <th className="p-4 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-brand-border-strong">
-                    {filteredTutores.map((tutor) => (
-                      <tr key={tutor.id} className="hover:bg-brand-surface-2/40 transition-colors">
-                        <td className="p-4">
-                          <div className="font-bold text-brand-text text-sm">{tutor.name}</div>
-                          <div className="text-[11px] text-brand-text-muted flex items-center gap-2 mt-0.5">
-                            <span className="flex items-center gap-1"><Mail className="w-3 h-3 text-brand-teal" /> {tutor.email}</span>
-                            {tutor.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-brand-teal" /> {tutor.phone}</span>}
-                          </div>
-                        </td>
-                        <td className="p-4 text-brand-text-muted font-mono">{tutor.cpf || '—'}</td>
-                        <td className="p-4">
-                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-teal/15 text-brand-teal border border-brand-teal/20">
-                            {tutor.plan_name || 'Essencial'}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                            tutor.status === 'active' 
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
-                              : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
-                          }`}>
-                            {tutor.status === 'active' ? 'Ativo' : 'Inativo'}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenTutorModal(tutor)}
-                              className="p-1.5 rounded-lg bg-brand-surface-2 border border-brand-border-strong text-brand-text-muted hover:text-brand-teal hover:border-brand-teal transition-colors"
-                              title="Editar tutor"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTutor(tutor)}
-                              className="p-1.5 rounded-lg bg-brand-surface-2 border border-brand-border-strong text-brand-text-muted hover:text-rose-400 hover:border-rose-400 transition-colors"
-                              title="Excluir tutor com segurança"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredTutores.map((tutor) => {
+                      const isAsaasActive = tutor.subscription_status === 'ACTIVE' || tutor.subscription_status === 'CONFIRMED' || tutor.subscription_status === 'RECEIVED';
+                      const hasAsaasId = !!tutor.asaas_customer_id;
+
+                      return (
+                        <tr key={tutor.id} className="hover:bg-brand-surface-2/40 transition-colors">
+                          <td className="p-4">
+                            <div className="font-bold text-brand-text text-sm">{tutor.name}</div>
+                            <div className="text-[11px] text-brand-text-muted flex items-center gap-2 mt-0.5">
+                              <span className="flex items-center gap-1"><Mail className="w-3 h-3 text-brand-teal" /> {tutor.email}</span>
+                              {tutor.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-brand-teal" /> {tutor.phone}</span>}
+                            </div>
+                            {hasAsaasId && (
+                              <div className="text-[10px] font-mono text-brand-teal/80 mt-1">
+                                Asaas ID: {tutor.asaas_customer_id}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-4 text-brand-text-muted font-mono">{tutor.cpf || '—'}</td>
+                          <td className="p-4">
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-teal/15 text-brand-teal border border-brand-teal/20">
+                              {tutor.plan_name || 'Essencial'}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-col gap-1 items-start">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                isAsaasActive
+                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                                  : hasAsaasId
+                                  ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                                  : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
+                              }`}>
+                                {isAsaasActive ? '🟢 Assinatura Paga/Ativa' : hasAsaasId ? '🟡 Fatura Pendente' : '🔴 Não Sincronizado no Asaas'}
+                              </span>
+                              <span className="text-[10px] text-brand-text-muted">
+                                Status da Conta: {tutor.status === 'active' ? 'Ativo no App' : 'Inativo'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleGenerateAsaasForTutor(tutor)}
+                                className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all ${
+                                  isAsaasActive
+                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                                    : 'bg-brand-teal/15 border-brand-teal/30 text-brand-teal hover:bg-brand-teal hover:text-brand-bg shadow-sm'
+                                }`}
+                                title="Sincronizar no Asaas e gerar cobrança (Pix / Boleto / Cartão)"
+                              >
+                                <Zap className="w-3.5 h-3.5" />
+                                <span>{hasAsaasId ? 'Cobrança Asaas' : 'Sincronizar Asaas'}</span>
+                              </button>
+                              <button
+                                onClick={() => handleOpenTutorModal(tutor)}
+                                className="p-1.5 rounded-lg bg-brand-surface-2 border border-brand-border-strong text-brand-text-muted hover:text-brand-teal hover:border-brand-teal transition-colors"
+                                title="Editar tutor"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTutor(tutor)}
+                                className="p-1.5 rounded-lg bg-brand-surface-2 border border-brand-border-strong text-brand-text-muted hover:text-rose-400 hover:border-rose-400 transition-colors"
+                                title="Excluir tutor com segurança"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -950,6 +1144,185 @@ export default function CentralCadastrosPage() {
           itemType={deleteModalState.itemType}
           impactWarnings={deleteModalState.impactWarnings}
         />
+
+        {/* MODAL DE COBRANÇA E SINCRONIZAÇÃO ASAAS */}
+        {invoiceModalState.isOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-brand-surface border border-brand-border-strong rounded-3xl p-6 max-w-lg w-full shadow-2xl animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between pb-4 border-b border-brand-border-strong mb-5">
+                <h3 className="font-bold text-lg text-brand-text flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-brand-teal" />
+                  Sincronização & Cobrança Asaas
+                </h3>
+                <button
+                  onClick={() => setInvoiceModalState(prev => ({ ...prev, isOpen: false }))}
+                  className="text-brand-text-muted hover:text-brand-text p-1 rounded-lg hover:bg-brand-surface-2"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {invoiceModalState.loading ? (
+                <div className="py-12 text-center space-y-4">
+                  <div className="w-12 h-12 rounded-full border-2 border-brand-teal border-t-transparent animate-spin mx-auto" />
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-sm text-brand-text">Comunicando com o Asaas...</h4>
+                    <p className="text-xs text-brand-text-muted">
+                      Verificando cliente, gerando assinatura e criando faturas de Pix e Cartão.
+                    </p>
+                  </div>
+                </div>
+              ) : invoiceModalState.error ? (
+                <div className="py-6 space-y-4">
+                  <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-bold mb-0.5">Falha na Sincronização:</strong>
+                      <span>{invoiceModalState.error}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setInvoiceModalState(prev => ({ ...prev, isOpen: false }))}
+                      className="px-4 py-2 rounded-xl bg-brand-surface-2 text-brand-text text-xs font-semibold hover:bg-brand-surface"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <div className="p-3.5 rounded-2xl bg-brand-surface-2 border border-brand-border-strong space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-brand-text-muted">Tutor:</span>
+                      <strong className="text-brand-text font-semibold">{invoiceModalState.tutor?.name}</strong>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-brand-text-muted">E-mail:</span>
+                      <span className="text-brand-text font-mono text-[11px]">{invoiceModalState.tutor?.email}</span>
+                    </div>
+                    {invoiceModalState.customerId && (
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-brand-text-muted">Asaas Customer ID:</span>
+                        <span className="text-brand-teal font-mono text-[11px] font-bold">{invoiceModalState.customerId}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-brand-text-muted">Plano & Valor:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-brand-teal/15 text-brand-teal text-[11px] font-bold">
+                        {invoiceModalState.planName || 'Essencial'} — R$ {invoiceModalState.value?.toFixed(2).replace('.', ',')}/mês
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-brand-text-muted">Status da Cobrança:</span>
+                      <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                        invoiceModalState.status === 'ACTIVE' || invoiceModalState.status === 'CONFIRMED' || invoiceModalState.status === 'RECEIVED'
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'bg-amber-500/20 text-amber-400'
+                      }`}>
+                        {invoiceModalState.status === 'ACTIVE' || invoiceModalState.status === 'RECEIVED' ? 'Pago / Ativo' : 'Aguardando Pagamento'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* PIX QR CODE & COPIA E COLA */}
+                  {invoiceModalState.pixCopiaECola && (
+                    <div className="p-4 rounded-2xl bg-brand-surface-2/60 border border-brand-teal/20 space-y-3 text-center">
+                      <div className="flex items-center justify-center gap-2 text-xs font-bold text-brand-text">
+                        <QrCode className="w-4 h-4 text-brand-teal" />
+                        Pix Instantâneo (Liberação Imediata)
+                      </div>
+                      
+                      {invoiceModalState.pixQrCode && (
+                        <div className="inline-block p-2 bg-white rounded-2xl shadow-md">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={invoiceModalState.pixQrCode.startsWith('data:') ? invoiceModalState.pixQrCode : `data:image/png;base64,${invoiceModalState.pixQrCode}`}
+                            alt="QR Code Pix"
+                            className="w-40 h-40 object-contain mx-auto"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={invoiceModalState.pixCopiaECola}
+                          className="w-full px-3 py-2 bg-brand-surface border border-brand-border-strong rounded-xl text-[11px] font-mono text-brand-text-muted truncate"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (invoiceModalState.pixCopiaECola) {
+                              navigator.clipboard.writeText(invoiceModalState.pixCopiaECola);
+                              setInvoiceModalState(prev => ({ ...prev, copied: true }));
+                              setTimeout(() => setInvoiceModalState(prev => ({ ...prev, copied: false })), 2500);
+                              showToast('Chave Pix Copia e Cola copiada!');
+                            }
+                          }}
+                          className="px-3 py-2 rounded-xl bg-brand-teal text-brand-bg text-xs font-bold hover:bg-brand-teal/90 transition-colors flex items-center gap-1 shrink-0"
+                        >
+                          {invoiceModalState.copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{invoiceModalState.copied ? 'Copiado!' : 'Copiar Pix'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AÇÕES DE ENVIO / FATURA */}
+                  <div className="space-y-2 pt-1">
+                    {invoiceModalState.status !== 'ACTIVE' && (
+                      <button
+                        type="button"
+                        onClick={handleApproveSandboxInInvoiceModal}
+                        disabled={invoiceModalState.loading}
+                        className="w-full py-2.5 px-4 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <Zap className="w-4 h-4" />
+                        {invoiceModalState.loading ? 'Aprovando no Sandbox...' : '⚡ Aprovar no Sandbox (Simular Pagamento)'}
+                      </button>
+                    )}
+
+                    {invoiceModalState.invoiceUrl && (
+                      <a
+                        href={invoiceModalState.invoiceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-brand-teal text-brand-bg text-xs font-bold hover:bg-brand-teal/90 transition-all flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <CreditCard className="w-4 h-4" />
+                        Abrir Link de Pagamento / Fatura Asaas
+                        <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                      </a>
+                    )}
+
+                    {invoiceModalState.whatsappUrl && (
+                      <a
+                        href={invoiceModalState.whatsappUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold hover:bg-emerald-500/25 transition-all flex items-center justify-center gap-2"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        Enviar Link e Pix por WhatsApp ao Tutor
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-2 border-t border-brand-border-strong">
+                    <button
+                      onClick={() => setInvoiceModalState(prev => ({ ...prev, isOpen: false }))}
+                      className="px-4 py-2 rounded-xl bg-brand-surface-2 text-brand-text text-xs font-semibold hover:bg-brand-surface"
+                    >
+                      Concluir
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* MODAL TUTOR */}
         {isTutorModalOpen && (

@@ -169,27 +169,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }
           
           if (profile?.plan_name) setPlanName(profile.plan_name);
-          if (profile?.asaas_customer_id) setCustomerId(profile.asaas_customer_id);
-          if (profile?.subscription_id) setSubscriptionId(profile.subscription_id);
+          setCustomerId(profile?.asaas_customer_id || '');
+          setSubscriptionId(profile?.subscription_id || '');
 
-          const subStatus = checkTutorSubscriptionStatus();
+          const subStatus = checkTutorSubscriptionStatus(email);
           const isDbActive = profile?.subscription_status === 'ACTIVE' || profile?.subscription_status === 'CONFIRMED' || profile?.subscription_status === 'RECEIVED';
-          const isPlanActive = isDbActive || subStatus.hasActivePlan;
+          // Um tutor só tem plano ativo se estiver confirmado no banco/Asaas
+          const isPlanActive = isDbActive;
           setHasActivePlan(isPlanActive);
 
-          // Sincronizar status de pagamento
-          if (isDbActive && !subStatus.hasActivePlan) {
-            localStorage.setItem('vetpro_subscription_status', 'ACTIVE');
-            localStorage.setItem('vetpro_subscription_paid', 'true');
-            if (!localStorage.getItem('vetpro_subscription_created_at')) {
-              localStorage.setItem('vetpro_subscription_created_at', new Date().toISOString());
-            }
-          } else if (subStatus.hasActivePlan && !isDbActive && isSupabaseConfigured()) {
-            void supabase.from('user_profiles').update({
-              subscription_status: 'ACTIVE',
-              status: 'active',
-              updated_at: new Date().toISOString()
-            }).eq('id', session.user.id);
+          // Sincronizar status local apenas se realmente ativo no banco
+          if (isDbActive) {
+            localStorage.setItem(`vetpro_sub_status_${email.toLowerCase().trim()}`, 'ACTIVE');
+            localStorage.setItem(`vetpro_sub_paid_${email.toLowerCase().trim()}`, 'true');
+          } else {
+            localStorage.setItem(`vetpro_sub_status_${email.toLowerCase().trim()}`, profile?.subscription_status || 'PENDING_PAYMENT');
+            localStorage.removeItem(`vetpro_sub_paid_${email.toLowerCase().trim()}`);
           }
         }
       } catch {
@@ -410,6 +405,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const tutorNavItems = [
     { name: 'Início do Tutor', href: '/dashboard', icon: User },
+    { name: 'Meu Perfil (Dados)', href: '/dashboard/perfil', icon: UserCheck },
     { name: 'Triagem AI (Chat)', href: '/dashboard/chat', icon: MessageSquare },
     { name: 'Meus Pets', href: '/dashboard/pets', icon: Dog },
     ...(isPartnersModuleEnabled ? [{ name: 'Rede de Parceiros & GPS', href: '/dashboard/parceiros', icon: MapPin }] : []),

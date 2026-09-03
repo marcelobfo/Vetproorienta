@@ -53,8 +53,8 @@ export async function POST(req: NextRequest) {
       'User-Agent': 'VetProOrienta/1.0.0 (https://vetpro-orienta.app)',
     };
 
-    let targetCustomerId = customerId;
-    let targetSubscriptionId = subscriptionId;
+    let targetCustomerId = customerId ? String(customerId).trim() : '';
+    let targetSubscriptionId = subscriptionId ? String(subscriptionId).trim() : '';
     let targetEmail = (email || '').trim().toLowerCase();
     let targetUserId = userId;
     let targetName = (name || '').trim();
@@ -75,20 +75,34 @@ export async function POST(req: NextRequest) {
         const supabase = adminClient || getSupabaseClient(customSupabaseUrl, customSupabaseAnonKey);
 
         let query = supabase.from('user_profiles').select('*');
-        if (targetUserId) query = query.eq('id', targetUserId);
-        else if (targetEmail) query = query.eq('email', targetEmail);
-        else if (targetCustomerId) query = query.eq('asaas_customer_id', targetCustomerId);
+        if (targetUserId) {
+          query = query.eq('id', targetUserId);
+        } else if (targetEmail) {
+          query = query.eq('email', targetEmail);
+        } else if (targetCpf && targetCpf.length >= 11) {
+          query = query.or(`cpf.eq.${targetCpf},cpf_cnpj.eq.${targetCpf}`);
+        } else if (targetCustomerId) {
+          query = query.eq('asaas_customer_id', targetCustomerId);
+        }
 
         const { data: profile } = await query.maybeSingle();
         if (profile) {
-          if (!targetCustomerId && profile.asaas_customer_id) targetCustomerId = profile.asaas_customer_id;
-          if (!targetSubscriptionId && profile.subscription_id) targetSubscriptionId = profile.subscription_id;
-          if (!targetEmail && profile.email) targetEmail = profile.email;
-          if (!targetName && profile.full_name) targetName = profile.full_name;
-          if (!targetCpf && profile.cpf) targetCpf = profile.cpf.replace(/\D/g, '');
-          if (!targetPhone && profile.phone) targetPhone = profile.phone.replace(/\D/g, '');
+          if (profile.asaas_customer_id) {
+            targetCustomerId = profile.asaas_customer_id;
+          }
+          if (profile.subscription_id) {
+            targetSubscriptionId = profile.subscription_id;
+          }
+          if (!targetEmail && profile.email) targetEmail = profile.email.toLowerCase().trim();
+          if (!targetName && profile.full_name) targetName = profile.full_name.trim();
+          if (!targetCpf && (profile.cpf || profile.cpf_cnpj)) {
+            targetCpf = String(profile.cpf || profile.cpf_cnpj).replace(/\D/g, '');
+          }
+          if (!targetPhone && profile.phone) targetPhone = String(profile.phone).replace(/\D/g, '');
           if (!planId && profile.plan_id) selectedPlan = profile.plan_id;
-          if (!planName && profile.plan_name) selectedPlanName = profile.plan_name;
+          if (!planName && (profile.plan_name || profile.plan_selected)) {
+            selectedPlanName = profile.plan_name || profile.plan_selected;
+          }
           targetUserId = profile.id;
         }
       } catch (dbErr: any) {
@@ -96,48 +110,98 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Se não temos customerId, cria ou busca o cliente no Asaas
-    if (!targetCustomerId) {
-      if (!targetName) targetName = targetEmail ? targetEmail.split('@')[0] : 'Tutor VetPro';
-      if (!targetCpf || (targetCpf.length !== 11 && targetCpf.length !== 14)) {
-        if (targetEmail) {
-          try {
-            const searchRes = await fetch(`${baseUrl}/v3/customers?email=${encodeURIComponent(targetEmail)}`, { method: 'GET', headers });
-            if (searchRes.ok) {
-              const searchJson = await searchRes.json();
-              if (searchJson?.data?.[0]?.id) {
-                targetCustomerId = searchJson.data[0].id;
-              }
-            }
-          } catch (sErr) {
-            console.warn('[Generate Invoice] Erro na busca por email:', sErr);
+    // 2. Validação rigorosa do targetCustomerId contra o Asaas
+    // Evita usar um customerId de outra conta (ex: admin/Marcelo) para um tutor (ex: Fernanda Diniz)
+    let validatedCustomerId = '';
+    if (targetCustomerId) {
+      try {
+        const custCheckRes = await fetch(`${baseUrl}/v3/customers/${targetCustomerId}`, { method: 'GET', headers });
+        if (custCheckRes.ok) {
+          const custCheckData = await custCheckRes.json();
+          const custAsaasEmail = (custCheckData?.email || '').trim().toLowerCase();
+          const custAsaasCpf = (custCheckData?.cpfCnpj || '').replace(/\D/g, '');
+
+          // Verifica se o customerId do Asaas pertence de fato ao usuário solicitado
+          const emailMatches = targetEmail && custAsaasEmail && custAsaasEmail === targetEmail;
+          const cpfMatches = targetCpf && custAsaasCpf && custAsaasCpf === targetCpf;
+
+          if (emailMatches || cpfMatches || (!targetEmail && !targetCpf)) {
+            validatedCustomerId = targetCustomerId;
+          } else {
+            console.warn(`[Generate Invoice] Descartando customerId ${targetCustomerId} (${custAsaasEmail}) pois não pertence a ${targetEmail || targetCpf}`);
+            targetCustomerId = '';
+            targetSubscriptionId = '';
           }
+        } else {
+          targetCustomerId = '';
+        }
+      } catch (checkErr) {
+        console.warn('[Generate Invoice] Erro ao validar customerId no Asaas:', checkErr);
+      }
+    }
+
+    // 3. Se não temos customerId validado, busca no Asaas por e-mail ou CPF
+    if (!validatedCustomerId) {
+      if (targetEmail) {
+        try {
+          const searchRes = await fetch(`${baseUrl}/v3/customers?email=${encodeURIComponent(targetEmail)}`, { method: 'GET', headers });
+          if (searchRes.ok) {
+            const searchJson = await searchRes.json();
+            const found = searchJson?.data?.find((c: any) => (c.email || '').toLowerCase() === targetEmail);
+            if (found?.id) {
+              validatedCustomerId = found.id;
+              targetCustomerId = found.id;
+            }
+          }
+        } catch (sErr) {
+          console.warn('[Generate Invoice] Erro na busca por email no Asaas:', sErr);
         }
       }
 
-      if (!targetCustomerId && targetCpf) {
+      if (!validatedCustomerId && targetCpf && targetCpf.length >= 11) {
+        try {
+          const searchCpfRes = await fetch(`${baseUrl}/v3/customers?cpfCnpj=${encodeURIComponent(targetCpf)}`, { method: 'GET', headers });
+          if (searchCpfRes.ok) {
+            const searchCpfJson = await searchCpfRes.json();
+            const foundCpf = searchCpfJson?.data?.[0];
+            if (foundCpf?.id) {
+              validatedCustomerId = foundCpf.id;
+              targetCustomerId = foundCpf.id;
+            }
+          }
+        } catch (sCpfErr) {
+          console.warn('[Generate Invoice] Erro na busca por CPF no Asaas:', sCpfErr);
+        }
+      }
+
+      // 4. Se ainda não temos cliente no Asaas, cria um novo cliente exclusivo para este usuário
+      if (!validatedCustomerId) {
+        const finalName = targetName || (targetEmail ? targetEmail.split('@')[0] : 'Tutor VetPro');
         const custRes = await directCreateAsaasCustomer(
           {
-            name: targetName,
-            cpfCnpj: targetCpf,
+            name: finalName,
+            cpfCnpj: targetCpf || undefined,
             email: targetEmail || undefined,
             mobilePhone: targetPhone || undefined,
-            externalReference: targetUserId || `tutor_${targetCpf}`,
+            externalReference: targetUserId || (targetCpf ? `tutor_${targetCpf}` : `tutor_${Date.now()}`),
           },
           mergedAsaasConfig
         );
 
         if (custRes.success && custRes.customer?.id) {
+          validatedCustomerId = custRes.customer.id;
           targetCustomerId = custRes.customer.id;
         } else {
           return NextResponse.json({
             success: false,
-            error: custRes.error || 'Não foi possível cadastrar o cliente no Asaas.',
+            error: custRes.error || 'Não foi possível cadastrar o cliente no Asaas. Verifique se o CPF/CNPJ e e-mail são válidos.',
             details: custRes.details,
           }, { status: 400 });
         }
       }
     }
+
+    targetCustomerId = validatedCustomerId;
 
     if (!targetCustomerId) {
       return NextResponse.json({

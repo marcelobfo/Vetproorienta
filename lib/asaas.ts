@@ -878,8 +878,19 @@ export function checkTutorSubscriptionStatus(emailOrCustomerId?: string): { hasA
     return { hasActivePlan: false, planName: 'Essencial', status: 'PENDING_PAYMENT' };
   }
 
-  const storedStatus = localStorage.getItem('vetpro_subscription_status');
-  const storedPaid = localStorage.getItem('vetpro_subscription_paid');
+  const cleanKey = emailOrCustomerId ? emailOrCustomerId.trim().toLowerCase() : '';
+  const userSubKey = cleanKey ? `vetpro_sub_status_${cleanKey}` : '';
+  const userPaidKey = cleanKey ? `vetpro_sub_paid_${cleanKey}` : '';
+
+  // Se passou um email específico, usa a chave com escopo
+  const storedStatus = userSubKey 
+    ? (localStorage.getItem(userSubKey) || localStorage.getItem('vetpro_subscription_status')) 
+    : localStorage.getItem('vetpro_subscription_status');
+    
+  const storedPaid = userPaidKey 
+    ? (localStorage.getItem(userPaidKey) || localStorage.getItem('vetpro_subscription_paid')) 
+    : localStorage.getItem('vetpro_subscription_paid');
+
   const storedPlan = localStorage.getItem('vetpro_selected_plan') || 'Essencial';
   const planDisplayName = storedPlan === 'especialista' ? 'Especialista' : 'Essencial';
 
@@ -893,17 +904,20 @@ export function checkTutorSubscriptionStatus(emailOrCustomerId?: string): { hasA
     };
   }
 
-  let createdAt = localStorage.getItem('vetpro_subscription_created_at');
+  let createdAtKey = cleanKey ? `vetpro_sub_created_${cleanKey}` : 'vetpro_subscription_created_at';
+  let createdAt = localStorage.getItem(createdAtKey) || localStorage.getItem('vetpro_subscription_created_at');
   if (!createdAt) {
     createdAt = new Date().toISOString();
-    localStorage.setItem('vetpro_subscription_created_at', createdAt);
+    localStorage.setItem(createdAtKey, createdAt);
   }
 
   const diffDays = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
   
   // A assinatura dura exatamente 30 dias. Passou de 30 dias, expira automaticamente para pendente/inativo.
   if (diffDays > 30) {
+    if (userSubKey) localStorage.setItem(userSubKey, 'PENDING_PAYMENT');
     localStorage.setItem('vetpro_subscription_status', 'PENDING_PAYMENT');
+    if (userPaidKey) localStorage.removeItem(userPaidKey);
     localStorage.removeItem('vetpro_subscription_paid');
     return {
       hasActivePlan: false,

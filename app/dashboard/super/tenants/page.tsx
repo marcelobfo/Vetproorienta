@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { 
   Building, Plus, Search, CheckCircle2, AlertCircle, ExternalLink, 
-  ShieldCheck, MoreVertical, Edit2, RefreshCw, X, Trash2
+  ShieldCheck, MoreVertical, Edit2, RefreshCw, X, Trash2, Globe,
+  Link as LinkIcon, Copy, Check, Sparkles, Users, ArrowRight
 } from 'lucide-react';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
@@ -17,8 +18,11 @@ export interface TenantItem {
   planName?: string;
   status: 'active' | 'pending' | 'suspended';
   cnpj?: string;
+  subdomain?: string;
+  customDomain?: string;
   customPrompt?: string;
   createdAt?: string;
+  tutorsCount?: number;
 }
 
 const DEFAULT_TENANTS: TenantItem[] = [
@@ -31,7 +35,10 @@ const DEFAULT_TENANTS: TenantItem[] = [
     planName: 'VetPro Master',
     status: 'active',
     cnpj: '12.345.678/0001-90',
-    createdAt: '15/01/2025'
+    subdomain: 'sao-francisco',
+    customDomain: 'atendimento.saofranciscovet.com.br',
+    createdAt: '15/01/2025',
+    tutorsCount: 8
   },
   {
     id: 'tenant-2',
@@ -42,7 +49,10 @@ const DEFAULT_TENANTS: TenantItem[] = [
     planName: 'VetPro Enterprise',
     status: 'active',
     cnpj: '98.765.432/0001-10',
-    createdAt: '02/03/2025'
+    subdomain: 'petcare-24h',
+    customDomain: 'portal.petcare24.com.br',
+    createdAt: '02/03/2025',
+    tutorsCount: 14
   },
   {
     id: 'tenant-3',
@@ -52,7 +62,10 @@ const DEFAULT_TENANTS: TenantItem[] = [
     phone: '(11) 99999-8888',
     planName: 'Super Admin Core',
     status: 'active',
-    createdAt: '10/01/2025'
+    subdomain: 'app',
+    customDomain: 'app.vetproorienta.com.br',
+    createdAt: '10/01/2025',
+    tutorsCount: 25
   },
   {
     id: 'tenant-4',
@@ -63,7 +76,9 @@ const DEFAULT_TENANTS: TenantItem[] = [
     planName: 'VetPro Starter',
     status: 'pending',
     cnpj: '33.444.555/0001-22',
-    createdAt: '22/08/2026'
+    subdomain: 'amigo-fiel',
+    createdAt: '22/08/2026',
+    tutorsCount: 3
   }
 ];
 
@@ -71,6 +86,7 @@ export default function TenantsPage() {
   const [tenants, setTenants] = useState<TenantItem[]>(DEFAULT_TENANTS);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [copiedTenantId, setCopiedTenantId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Modal
@@ -83,6 +99,8 @@ export default function TenantsPage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [cnpj, setCnpj] = useState('');
+  const [subdomain, setSubdomain] = useState('');
+  const [customDomain, setCustomDomain] = useState('');
   const [planName, setPlanName] = useState('VetPro Starter');
   const [status, setStatus] = useState<'active' | 'pending' | 'suspended'>('active');
   const [customPrompt, setCustomPrompt] = useState('');
@@ -90,6 +108,33 @@ export default function TenantsPage() {
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const generateSlug = (val: string) => {
+    return val
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  };
+
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (!editingTenant && !subdomain) {
+      setSubdomain(generateSlug(val));
+    }
+  };
+
+  const handleCopyTenantDomain = (t: TenantItem) => {
+    const domainText = t.customDomain 
+      ? `https://${t.customDomain}` 
+      : `https://${t.subdomain || generateSlug(t.name)}.vetproorienta.com.br`;
+    navigator.clipboard.writeText(domainText);
+    setCopiedTenantId(t.id);
+    showToast(`Domínio copiado: ${domainText}`);
+    setTimeout(() => setCopiedTenantId(null), 3000);
   };
 
   const loadTenants = async () => {
@@ -101,6 +146,20 @@ export default function TenantsPage() {
           .from('tenants')
           .select('*')
           .order('created_at', { ascending: false });
+
+        // Busca contagem de tutores por tenant
+        const { data: userProfiles } = await supabase
+          .from('user_profiles')
+          .select('id, tenant_id');
+
+        const tutorCounts: Record<string, number> = {};
+        if (userProfiles) {
+          userProfiles.forEach((u: any) => {
+            if (u.tenant_id) {
+              tutorCounts[u.tenant_id] = (tutorCounts[u.tenant_id] || 0) + 1;
+            }
+          });
+        }
 
         if (error) {
           console.warn('Erro ao ler tenants do Supabase:', error.message);
@@ -116,8 +175,11 @@ export default function TenantsPage() {
             planName: t.plan_name || 'VetPro Starter',
             status: t.status || 'active',
             cnpj: t.cnpj || '',
+            subdomain: t.subdomain || generateSlug(t.name || ''),
+            customDomain: t.custom_domain || '',
             customPrompt: t.custom_prompt || '',
-            createdAt: t.created_at ? new Date(t.created_at).toLocaleDateString('pt-BR') : ''
+            createdAt: t.created_at ? new Date(t.created_at).toLocaleDateString('pt-BR') : '',
+            tutorsCount: tutorCounts[t.id] || 0,
           }));
           setTenants(mapped);
           localStorage.setItem('vetpro_tenants_list', JSON.stringify(mapped));
@@ -156,6 +218,8 @@ export default function TenantsPage() {
     setEmail('');
     setPhone('');
     setCnpj('');
+    setSubdomain('');
+    setCustomDomain('');
     setPlanName('VetPro Starter');
     setStatus('active');
     setCustomPrompt('');
@@ -169,6 +233,8 @@ export default function TenantsPage() {
     setEmail(t.email || '');
     setPhone(t.phone || '');
     setCnpj(t.cnpj || '');
+    setSubdomain(t.subdomain || generateSlug(t.name));
+    setCustomDomain(t.customDomain || '');
     setPlanName(t.planName || 'VetPro Starter');
     setStatus(t.status);
     setCustomPrompt(t.customPrompt || '');
@@ -179,12 +245,16 @@ export default function TenantsPage() {
     e.preventDefault();
     if (!name.trim()) return;
 
+    const finalSubdomain = subdomain.trim() ? generateSlug(subdomain) : generateSlug(name);
+
     const tenantData: Partial<TenantItem> = {
       name,
       owner,
       email,
       phone,
       cnpj,
+      subdomain: finalSubdomain,
+      customDomain: customDomain.trim(),
       planName,
       status,
       customPrompt
@@ -202,10 +272,13 @@ export default function TenantsPage() {
         email,
         phone,
         cnpj,
+        subdomain: finalSubdomain,
+        customDomain: customDomain.trim(),
         planName,
         status,
         customPrompt,
-        createdAt: new Date().toLocaleDateString('pt-BR')
+        createdAt: new Date().toLocaleDateString('pt-BR'),
+        tutorsCount: 0,
       };
       updatedTenants = [newT, ...tenants];
     }
@@ -222,6 +295,8 @@ export default function TenantsPage() {
           email,
           phone,
           cnpj,
+          subdomain: finalSubdomain,
+          custom_domain: customDomain.trim() || null,
           plan_name: planName,
           status,
           custom_prompt: customPrompt
@@ -233,6 +308,7 @@ export default function TenantsPage() {
           await supabase.from('tenants').insert([payload]);
         }
         showToast('Clínica salva no Supabase com sucesso!');
+        loadTenants();
       } catch (err: any) {
         console.error(err);
         showToast(`Salvo localmente! Supabase: ${err.message}`, 'success');
@@ -267,7 +343,8 @@ export default function TenantsPage() {
   const filteredTenants = tenants.filter(t => 
     t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (t.email && t.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (t.cnpj && t.cnpj.includes(searchTerm))
+    (t.cnpj && t.cnpj.includes(searchTerm)) ||
+    (t.subdomain && t.subdomain.includes(searchTerm))
   );
 
   return (
@@ -286,13 +363,13 @@ export default function TenantsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="bg-brand-teal/15 text-brand-teal text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
-                Multi-Tenant Core
+              <span className="bg-brand-teal/15 text-brand-teal text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                <Globe className="w-3.5 h-3.5" /> Multi-Tenant & Domínios
               </span>
             </div>
             <h1 className="font-display text-2xl font-bold">Todas as Clínicas (Tenants)</h1>
             <p className="text-brand-text-muted text-sm">
-              Gestão centralizada de instâncias, planos comerciais e prompts isolados por clínica.
+              Gestão centralizada de instâncias, domínios individuais, planos comerciais e tutores alocados.
             </p>
           </div>
 
@@ -325,14 +402,14 @@ export default function TenantsPage() {
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-text-muted" />
               <input 
                 type="text" 
-                placeholder="Buscar por nome da clínica, e-mail ou CNPJ..." 
+                placeholder="Buscar por clínica, subdomínio, e-mail ou CNPJ..." 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-brand-bg border border-brand-border-strong rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-brand-teal text-brand-text" 
               />
             </div>
-            <div className="text-xs text-brand-text-muted font-medium">
-              Total: {tenants.length} clínicas cadastradas
+            <div className="text-xs text-brand-text-muted font-medium flex items-center gap-3">
+              <span>Total: {tenants.length} clínicas cadastradas</span>
             </div>
           </div>
 
@@ -342,64 +419,95 @@ export default function TenantsPage() {
               <thead className="bg-brand-surface-2/60 text-brand-text-muted border-b border-brand-border-strong text-xs uppercase tracking-wider font-semibold">
                 <tr>
                   <th className="px-6 py-4">Clínica / Razão Social</th>
+                  <th className="px-6 py-4">Domínio / Sessão Individual</th>
                   <th className="px-6 py-4">Responsável & Contato</th>
-                  <th className="px-6 py-4">Plano Contratado</th>
+                  <th className="px-6 py-4">Tutores Alocados</th>
+                  <th className="px-6 py-4">Plano</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-border-strong text-xs">
-                {filteredTenants.map((t) => (
-                  <tr key={t.id} className="hover:bg-brand-surface-2/40 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-semibold text-brand-text text-sm flex items-center gap-2">
-                        <Building className="w-4 h-4 text-brand-teal" />
-                        {t.name}
-                      </div>
-                      {t.cnpj && (
-                        <div className="text-xs text-brand-text-muted mt-0.5 font-mono">CNPJ: {t.cnpj}</div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-brand-text font-medium">{t.owner}</div>
-                      <div className="text-xs text-brand-text-muted">{t.email} {t.phone ? `• ${t.phone}` : ''}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="bg-purple-500/15 text-purple-400 font-bold px-2.5 py-1 rounded-lg text-xs border border-purple-500/30">
-                        {t.planName || 'VetPro Starter'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-                        t.status === 'active' 
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
-                          : t.status === 'pending'
-                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                          : 'bg-brand-danger/15 text-brand-danger border border-brand-danger/30'
-                      }`}>
-                        {t.status === 'active' ? 'Ativa' : t.status === 'pending' ? 'Pendente' : 'Suspensa'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button 
-                          onClick={() => handleOpenEditModal(t)}
-                          className="p-2 text-brand-text-muted hover:text-brand-text hover:bg-brand-surface-2 rounded-lg transition-colors"
-                          title="Editar Clínica"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteTenant(t.id, t.name)}
-                          className="p-2 text-brand-danger hover:bg-brand-danger/10 rounded-lg transition-colors"
-                          title="Excluir Clínica"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredTenants.map((t) => {
+                  const subDomainText = `${t.subdomain || generateSlug(t.name)}.vetproorienta.com.br`;
+                  return (
+                    <tr key={t.id} className="hover:bg-brand-surface-2/40 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-brand-text text-sm flex items-center gap-2">
+                          <Building className="w-4 h-4 text-brand-teal" />
+                          {t.name}
+                        </div>
+                        {t.cnpj && (
+                          <div className="text-xs text-brand-text-muted mt-0.5 font-mono">CNPJ: {t.cnpj}</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 font-mono text-[11px] text-brand-teal bg-brand-teal/10 px-2 py-1 rounded-lg border border-brand-teal/20 w-fit">
+                            <Globe className="w-3 h-3" />
+                            <span>{subDomainText}</span>
+                            <button
+                              onClick={() => handleCopyTenantDomain(t)}
+                              className="hover:text-brand-text p-0.5"
+                              title="Copiar URL do Tenant"
+                            >
+                              {copiedTenantId === t.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                          </div>
+                          {t.customDomain && (
+                            <div className="text-[10px] text-brand-text-muted font-mono flex items-center gap-1">
+                              <span>Custom: {t.customDomain}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-brand-text font-medium">{t.owner}</div>
+                        <div className="text-xs text-brand-text-muted">{t.email} {t.phone ? `• ${t.phone}` : ''}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center gap-1 font-bold text-xs px-2.5 py-1 rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/20">
+                          <Users className="w-3.5 h-3.5" />
+                          {t.tutorsCount || 0} tutores
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="bg-purple-500/15 text-purple-400 font-bold px-2.5 py-1 rounded-lg text-xs border border-purple-500/30">
+                          {t.planName || 'VetPro Starter'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
+                          t.status === 'active' 
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                            : t.status === 'pending'
+                            ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                            : 'bg-brand-danger/15 text-brand-danger border border-brand-danger/30'
+                        }`}>
+                          {t.status === 'active' ? 'Ativa' : t.status === 'pending' ? 'Pendente' : 'Suspensa'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button 
+                            onClick={() => handleOpenEditModal(t)}
+                            className="p-2 text-brand-text-muted hover:text-brand-text hover:bg-brand-surface-2 rounded-lg transition-colors"
+                            title="Editar Clínica e Domínio"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteTenant(t.id, t.name)}
+                            className="p-2 text-brand-danger hover:bg-brand-danger/10 rounded-lg transition-colors"
+                            title="Excluir Clínica"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -429,9 +537,42 @@ export default function TenantsPage() {
                     required
                     placeholder="Ex: Clínica Veterinária São Francisco"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => handleNameChange(e.target.value)}
                     className="w-full bg-brand-surface-2 border border-brand-border-strong rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-brand-teal text-brand-text"
                   />
+                </div>
+
+                {/* Subdomínio e Domínio Customizado */}
+                <div className="p-3.5 rounded-xl bg-brand-surface-2/60 border border-brand-teal/20 space-y-3">
+                  <div className="text-xs font-bold text-brand-teal flex items-center gap-1.5">
+                    <Globe className="w-4 h-4" /> Configuração de Domínio & Sessão Individual
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-brand-text-muted mb-1">Subdomínio do Tenant (Slug)</label>
+                    <div className="flex items-center gap-1">
+                      <input 
+                        type="text" 
+                        required
+                        placeholder="sao-francisco"
+                        value={subdomain}
+                        onChange={(e) => setSubdomain(generateSlug(e.target.value))}
+                        className="w-full bg-brand-surface border border-brand-border-strong rounded-xl px-3 py-2 text-xs font-mono text-brand-text focus:outline-none focus:border-brand-teal"
+                      />
+                      <span className="text-[11px] font-mono text-brand-text-muted shrink-0">.vetproorienta.com.br</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-brand-text-muted mb-1">Domínio Personalizado (Opcional)</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: atendimento.saofranciscovet.com.br"
+                      value={customDomain}
+                      onChange={(e) => setCustomDomain(e.target.value)}
+                      className="w-full bg-brand-surface border border-brand-border-strong rounded-xl px-3 py-2 text-xs font-mono text-brand-text focus:outline-none focus:border-brand-teal"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

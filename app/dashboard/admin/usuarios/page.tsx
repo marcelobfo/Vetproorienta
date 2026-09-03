@@ -71,10 +71,17 @@ const DEFAULT_USERS: SystemUser[] = [
 
 export default function UsuariosPage() {
   const [users, setUsers] = useState<SystemUser[]>(DEFAULT_USERS);
+  const [tenants, setTenants] = useState<{ id: string; name: string }[]>([
+    { id: 'tenant-1', name: 'Clínica Veterinária São Francisco' },
+    { id: 'tenant-2', name: 'Hospital Veterinário PetCare 24h' },
+    { id: 'tenant-3', name: 'VetPro Global (Sistema Principal)' },
+    { id: 'tenant-4', name: 'Clínica Amigo Fiel' },
+  ]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [updatingTenantUserId, setUpdatingTenantUserId] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -102,6 +109,12 @@ export default function UsuariosPage() {
     try {
       const supabase = getSupabaseClient();
       if (isSupabaseConfigured()) {
+        // Carrega tenants
+        const { data: tData } = await supabase.from('tenants').select('id, name').order('name');
+        if (tData && tData.length > 0) {
+          setTenants(tData);
+        }
+
         const { data, error } = await supabase
           .from('user_profiles')
           .select('*')
@@ -140,6 +153,36 @@ export default function UsuariosPage() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleQuickTenantChange = async (user: SystemUser, newTenantId: string) => {
+    setUpdatingTenantUserId(user.id);
+    const targetTenant = tenants.find(t => t.id === newTenantId);
+    const tName = targetTenant?.name || 'Clínica';
+
+    // Atualiza estado local
+    const updatedUsers = users.map(u => u.id === user.id ? { ...u, tenantId: newTenantId } : u);
+    setUsers(updatedUsers);
+    localStorage.setItem('vetpro_users_list', JSON.stringify(updatedUsers));
+
+    try {
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseClient();
+        await supabase
+          .from('user_profiles')
+          .update({
+            tenant_id: newTenantId.startsWith('tenant-') ? null : newTenantId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user.id);
+      }
+      showToast(`Usuário "${user.name}" transferido para "${tName}"!`);
+    } catch (err: any) {
+      console.error('Erro ao transferir tenant:', err);
+      showToast(`Alterado localmente.`, 'success');
+    } finally {
+      setUpdatingTenantUserId(null);
     }
   };
 
@@ -372,6 +415,7 @@ export default function UsuariosPage() {
                 <tr>
                   <th className="px-6 py-4">Usuário</th>
                   <th className="px-6 py-4">Função / Perfil</th>
+                  <th className="px-6 py-4">Clínica / Tenant (Mude Aqui)</th>
                   <th className="px-6 py-4">Habilitação Profissional</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Ações</th>
@@ -399,6 +443,20 @@ export default function UsuariosPage() {
                          user.role === 'veterinario' ? '🩺 Médico Veterinário' :
                          '🐾 Tutor'}
                       </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <select
+                        value={user.tenantId || 'tenant-1'}
+                        disabled={updatingTenantUserId === user.id}
+                        onChange={(e) => handleQuickTenantChange(user, e.target.value)}
+                        className="bg-brand-surface border border-brand-teal/30 hover:border-brand-teal rounded-xl px-2.5 py-1.5 text-xs text-brand-teal font-medium focus:outline-none cursor-pointer transition-colors shadow-sm"
+                      >
+                        {tenants.map(t => (
+                          <option key={t.id} value={t.id}>
+                            🏥 {t.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-6 py-4">
                       {user.crmv ? (

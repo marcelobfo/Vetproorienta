@@ -8,7 +8,10 @@ export interface TutorRecord {
   phone?: string;
   cpf?: string;
   plan_name?: string;
+  plan_id?: string;
   subscription_status?: string;
+  asaas_customer_id?: string;
+  asaas_subscription_id?: string;
   status: 'active' | 'inactive';
   pets_count?: number;
   created_at?: string;
@@ -70,9 +73,12 @@ export async function getTutors(): Promise<TutorRecord[]> {
           name: d.full_name || d.name || 'Tutor',
           email: d.email || '',
           phone: d.phone || '',
-          cpf: d.cpf || '',
-          plan_name: d.plan_name || 'Essencial',
-          subscription_status: d.subscription_status || 'ACTIVE',
+          cpf: d.cpf || d.cpf_cnpj || '',
+          plan_name: d.plan_name || d.plan_selected || 'Essencial',
+          plan_id: d.plan_id || (d.plan_name?.toLowerCase().includes('especialista') ? 'especialista' : 'essencial'),
+          subscription_status: d.subscription_status || 'PENDING_PAYMENT',
+          asaas_customer_id: d.asaas_customer_id || '',
+          asaas_subscription_id: d.subscription_id || d.asaas_subscription_id || '',
           status: d.status || 'active',
           pets_count: d.pets_count || 0,
           created_at: d.created_at || new Date().toISOString(),
@@ -99,7 +105,10 @@ export async function saveTutor(tutor: Partial<TutorRecord> & { name: string; em
       phone: tutor.phone || '',
       cpf: tutor.cpf || '',
       plan_name: tutor.plan_name || 'Essencial',
-      subscription_status: tutor.subscription_status || 'ACTIVE',
+      plan_id: tutor.plan_id || (tutor.plan_name?.toLowerCase().includes('especialista') ? 'especialista' : 'essencial'),
+      subscription_status: tutor.subscription_status || 'PENDING_PAYMENT',
+      asaas_customer_id: tutor.asaas_customer_id || '',
+      asaas_subscription_id: tutor.asaas_subscription_id || '',
       status: tutor.status || 'active',
       pets_count: tutor.pets_count || 0,
       created_at: tutor.created_at || now,
@@ -115,9 +124,13 @@ export async function saveTutor(tutor: Partial<TutorRecord> & { name: string; em
           email: tutorToSave.email,
           phone: tutorToSave.phone,
           cpf: tutorToSave.cpf,
+          cpf_cnpj: tutorToSave.cpf,
           role: 'tutor',
           plan_name: tutorToSave.plan_name,
+          plan_id: tutorToSave.plan_id,
           subscription_status: tutorToSave.subscription_status,
+          asaas_customer_id: tutorToSave.asaas_customer_id || null,
+          subscription_id: tutorToSave.asaas_subscription_id || null,
           status: tutorToSave.status,
           updated_at: now,
         });

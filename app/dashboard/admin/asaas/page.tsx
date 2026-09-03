@@ -59,6 +59,56 @@ export default function AsaasAdminPage() {
   const [logs, setLogs] = useState<string[]>(['[00:00:00] Módulo Asaas Gateway inicializado.']);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
 
+  // Sandbox Payment Confirmation (POST /v3/sandbox/payment/{id}/confirm)
+  const [sandboxPaymentId, setSandboxPaymentId] = useState('');
+  const [isConfirmingSandbox, setIsConfirmingSandbox] = useState(false);
+  const [sandboxConfirmResult, setSandboxConfirmResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleConfirmSandboxPayment = async (paymentIdToConfirm?: string) => {
+    const targetId = (paymentIdToConfirm || sandboxPaymentId).trim();
+    if (!targetId) {
+      showToast('Informe o ID do pagamento (ex: pay_080225913252).', 'error');
+      return;
+    }
+
+    setIsConfirmingSandbox(true);
+    setSandboxConfirmResult(null);
+
+    try {
+      addLog(`⚡ Enviando confirmação de teste Sandbox para cobrança ${targetId}...`);
+      const res = await fetch('/api/asaas/sandbox-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentId: targetId,
+          asaasConfig: {
+            apiKey: config.apiKey,
+            environment: config.environment || 'sandbox',
+            customBaseUrl: config.customBaseUrl,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setSandboxConfirmResult({ success: true, message: data.message || 'Pagamento confirmado com sucesso!' });
+        addLog(`✅ Pagamento ${targetId} APROVADO no Sandbox do Asaas!`);
+        showToast('Cobrança de teste aprovada no Sandbox do Asaas!');
+        void fetchRecentSubscriptions();
+      } else {
+        setSandboxConfirmResult({ success: false, message: data.error || 'Falha ao confirmar no sandbox.' });
+        addLog(`❌ Falha ao aprovar no Sandbox: ${data.error}`);
+        showToast(data.error || 'Falha ao confirmar no sandbox.', 'error');
+      }
+    } catch (err: any) {
+      setSandboxConfirmResult({ success: false, message: err.message || 'Erro de rede.' });
+      addLog(`❌ Erro Sandbox: ${err.message}`);
+      showToast(err.message || 'Erro ao conectar.', 'error');
+    } finally {
+      setIsConfirmingSandbox(false);
+    }
+  };
+
   const addLog = useCallback((msg: string) => {
     setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 35)]);
   }, []);
@@ -996,6 +1046,56 @@ export default function AsaasAdminPage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Bloco 5: Sandbox Actions (Aprovação de Pagamento de Teste) */}
+        <div className="bg-brand-surface border border-amber-500/30 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-brand-border-strong pb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <h3 className="font-display font-bold text-base text-brand-text">
+                5. Sandbox Actions — Confirmar / Aprovar Pagamento de Teste
+              </h3>
+            </div>
+            <span className="text-[11px] text-amber-400 font-mono font-bold bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+              POST /v3/sandbox/payment/&#123;id&#125;/confirm
+            </span>
+          </div>
+
+          <p className="text-xs text-brand-text-muted">
+            No ambiente de homologação (Sandbox), você pode aprovar instantaneamente qualquer cobrança ou fatura pendente sem cartão real, simulando a liquidação do Pix ou Boleto.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative w-full">
+              <input
+                type="text"
+                placeholder="Informe o ID do pagamento (ex: pay_080225913252)..."
+                value={sandboxPaymentId}
+                onChange={(e) => setSandboxPaymentId(e.target.value)}
+                className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3.5 py-2.5 text-xs text-brand-text font-mono focus:outline-none focus:border-amber-400"
+              />
+            </div>
+            <button
+              onClick={() => handleConfirmSandboxPayment()}
+              disabled={isConfirmingSandbox || !sandboxPaymentId.trim()}
+              className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 shrink-0 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isConfirmingSandbox ? 'animate-spin' : ''}`} />
+              {isConfirmingSandbox ? 'Aprovando no Asaas...' : '⚡ Aprovar no Sandbox'}
+            </button>
+          </div>
+
+          {sandboxConfirmResult && (
+            <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+              sandboxConfirmResult.success 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}>
+              {sandboxConfirmResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span>{sandboxConfirmResult.message}</span>
+            </div>
+          )}
         </div>
 
         {/* Console Logs */}
