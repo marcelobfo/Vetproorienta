@@ -11,8 +11,10 @@ import {
   Package, LogOut, User, Dog, History, Shield, Zap,
   BrainCircuit, Users, Globe, ChevronDown, Check, Smartphone, 
   AlertTriangle, QrCode, Copy, CheckCircle2, RefreshCw, ExternalLink, Lock, FileText,
-  MapPin, UserCheck, Building
+  MapPin, UserCheck, Building, ShieldCheck
 } from 'lucide-react';
+import { triggerPWAInstallModal } from '@/components/PwaInstallPrompt';
+
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<'tutor' | 'admin' | 'super_admin'>(() => {
@@ -413,6 +415,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     ...(isPartnersModuleEnabled ? [{ name: 'Rede de Parceiros & GPS', href: '/dashboard/parceiros', icon: MapPin }] : []),
     { name: 'Histórico', href: '/dashboard/historico', icon: History },
     { name: 'Assinatura & Faturas', href: '/dashboard/assinatura', icon: CreditCard },
+    { name: 'Privacidade & LGPD', href: '/dashboard/privacidade', icon: ShieldCheck },
   ];
 
   const adminNavItems = [
@@ -425,6 +428,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Configuração da IA', href: '/dashboard/admin/ia-config', icon: BrainCircuit },
     { name: 'Gestão de Módulos', href: '/dashboard/admin/modulos', icon: Zap },
     { name: 'Automações (Scripts)', href: '/dashboard/automacoes', icon: TerminalSquare },
+    { name: 'Privacidade & LGPD', href: '/dashboard/privacidade', icon: ShieldCheck },
   ];
 
   const superAdminNavItems = [
@@ -442,6 +446,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Configuração da IA', href: '/dashboard/admin/ia-config', icon: BrainCircuit },
     { name: 'Automações & Scripts', href: '/dashboard/automacoes', icon: TerminalSquare },
     { name: 'Gestão de Módulos', href: '/dashboard/admin/modulos', icon: Zap },
+    { name: 'Privacidade & LGPD', href: '/dashboard/privacidade', icon: ShieldCheck },
   ];
 
   let currentNavItems = tutorNavItems;
@@ -583,6 +588,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
+
+        <div className="p-3 mx-3 mb-2">
+          <button
+            type="button"
+            onClick={triggerPWAInstallModal}
+            className="w-full py-2 px-3 rounded-xl bg-brand-teal/15 hover:bg-brand-teal/25 border border-brand-teal/30 text-brand-teal text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Baixar App (PWA)</span>
+          </button>
+        </div>
 
         <div className="p-4 border-t border-brand-border-strong bg-brand-bg-elevated/50 shrink-0">
           <div className="flex items-center gap-3 px-2 py-2">
