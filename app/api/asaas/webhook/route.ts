@@ -29,11 +29,24 @@ export async function POST(req: NextRequest) {
 
     // 1. Validação opcional por Header de AuthToken
     const receivedToken = req.headers.get('asaas-access-token') || req.headers.get('x-asaas-access-token');
-    const configuredToken = process.env.ASAAS_WEBHOOK_AUTH_TOKEN;
+    const configuredToken = process.env.ASAAS_WEBHOOK_AUTH_TOKEN?.trim();
 
-    if (configuredToken && receivedToken && receivedToken !== configuredToken) {
-      console.warn('[ASAAS WEBHOOK] Token de autenticação inválido no webhook:', receivedToken);
-      return NextResponse.json({ error: 'Unauthorized webhook token' }, { status: 401 });
+    // Se houver um token real configurado no servidor (ignora placeholders de exemplo)
+    const isRealTokenConfigured = Boolean(
+      configuredToken && 
+      !configuredToken.startsWith('sua_') && 
+      !configuredToken.startsWith('SEU_') &&
+      !configuredToken.includes('exemplo') &&
+      configuredToken.length >= 6
+    );
+
+    if (isRealTokenConfigured) {
+      if (!receivedToken || receivedToken !== configuredToken) {
+        console.warn('[ASAAS WEBHOOK] Token de autenticação incorreto ou ausente no header asaas-access-token:', {
+          received: receivedToken ? 'presente (incompatível)' : 'ausente',
+        });
+        return NextResponse.json({ error: 'Unauthorized webhook token' }, { status: 401 });
+      }
     }
 
     // 2. Determina o status de liberação da plataforma
