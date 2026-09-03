@@ -323,12 +323,15 @@ export async function directCreateAsaasCustomer(
       'User-Agent': 'VetProOrienta/1.0.0 (https://vetpro-orienta.app)',
     };
 
-    // 1. Busca cliente existente para evitar duplicidade
+    // 1. Busca cliente existente para evitar duplicidade e garantir que os dados estejam atualizados no nome do comprador atual
     let activeBaseUrl = baseUrl;
-    let searchUrl = `${activeBaseUrl}/v3/customers?cpfCnpj=${encodeURIComponent(sanitizedCpfCnpj)}`;
-    let searchRes: Response | null = null;
+    let existingCustomer: any = null;
+
     try {
-      searchRes = await fetch(searchUrl, { method: 'GET', headers });
+      // 1.1 Busca por CPF/CNPJ
+      let searchUrl = `${activeBaseUrl}/v3/customers?cpfCnpj=${encodeURIComponent(sanitizedCpfCnpj)}`;
+      let searchRes = await fetch(searchUrl, { method: 'GET', headers });
+
       // Se deu 401 e o ambiente não foi forçado, tenta no ambiente oposto (Sandbox <-> Produção)
       if (searchRes.status === 401 && (!config.environment || config.environment === 'auto')) {
         const fallbackUrl = activeBaseUrl.includes('sandbox') ? 'https://api.asaas.com' : 'https://api-sandbox.asaas.com';
@@ -343,25 +346,33 @@ export async function directCreateAsaasCustomer(
       if (searchRes && searchRes.ok) {
         const searchJson = await searchRes.json();
         if (searchJson && Array.isArray(searchJson.data) && searchJson.data.length > 0) {
-          console.log(`[Asaas] Cliente existente localizado no Asaas (${searchJson.data[0].id})`);
-          return {
-            success: true,
-            customer: searchJson.data[0],
-            isExisting: true,
-          };
+          existingCustomer = searchJson.data[0];
+        }
+      }
+
+      // 1.2 Se não achou por CPF mas temos e-mail, busca por e-mail
+      if (!existingCustomer && customerData.email && customerData.email.trim()) {
+        const emailSearchUrl = `${activeBaseUrl}/v3/customers?email=${encodeURIComponent(customerData.email.trim())}`;
+        const emailSearchRes = await fetch(emailSearchUrl, { method: 'GET', headers });
+        if (emailSearchRes.ok) {
+          const emailJson = await emailSearchRes.json();
+          if (emailJson && Array.isArray(emailJson.data) && emailJson.data.length > 0) {
+            existingCustomer = emailJson.data[0];
+          }
         }
       }
     } catch (sErr) {
       console.warn('[Asaas] Aviso na busca prévia de cliente:', sErr);
     }
 
-    // 2. Criação do cliente
+    // Monta o payload completo com os dados do comprador atual
     const payload: Record<string, any> = {
       name: customerData.name.trim(),
       cpfCnpj: sanitizedCpfCnpj,
     };
-    if (customerData.email && customerData.email.trim()) payload.email = customerData.email.trim();
+    if (customerData.email && customerData.email.trim()) payload.email = customerData.email.trim().toLowerCase();
     if (mobilePhone && mobilePhone.length >= 10) payload.mobilePhone = mobilePhone;
+    if (customerData.phone && customerData.phone.replace(/\D/g, '').length >= 10) payload.phone = customerData.phone.replace(/\D/g, '');
     if (customerData.address) payload.address = customerData.address;
     if (customerData.addressNumber) payload.addressNumber = customerData.addressNumber;
     if (customerData.complement) payload.complement = customerData.complement;
@@ -372,6 +383,55 @@ export async function directCreateAsaasCustomer(
       payload.notificationDisabled = customerData.notificationDisabled;
     }
 
+    // 2. Se o cliente já existia no Asaas, ATUALIZA os dados para o nome/email/telefone do comprador atual
+    if (existingCustomer?.id) {
+      try {
+        const updateUrl = `${activeBaseUrl}/v3/customers/${existingCustomer.id}`;
+        console.log(`[Asaas] Atualizando dados cadastrais do cliente existente ${existingCustomer.id} para '${payload.name}' (${payload.email || payload.cpfCnpj})...`);
+        const updateRes = await fetch(updateUrl, {
+          method: 'POST', // Asaas aceita POST ou PUT em /v3/customers/{id}
+          headers,
+          body: JSON.stringify(payload),
+        });
+
+        if (updateRes.ok) {
+          const updatedCustomer = await updateRes.json();
+          return {
+            success: true,
+            customer: updatedCustomer,
+            isExisting: true,
+            details: updatedCustomer,
+          };
+        } else {
+          // Se falhou o update, tenta com PUT
+          const putRes = await fetch(updateUrl, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(payload),
+          });
+          if (putRes.ok) {
+            const updatedCustomer = await putRes.json();
+            return {
+              success: true,
+              customer: updatedCustomer,
+              isExisting: true,
+              details: updatedCustomer,
+            };
+          }
+        }
+      } catch (updErr) {
+        console.warn(`[Asaas] Aviso ao atualizar dados do cliente ${existingCustomer.id}:`, updErr);
+      }
+
+      // Se não conseguiu atualizar via API, garante ao menos o retorno com o nome do comprador atual mesclado
+      return {
+        success: true,
+        customer: { ...existingCustomer, ...payload, id: existingCustomer.id },
+        isExisting: true,
+      };
+    }
+
+    // 3. Criação do cliente novo caso não exista
     let createUrl = `${activeBaseUrl}/v3/customers`;
     let createRes = await fetch(createUrl, {
       method: 'POST',
@@ -397,6 +457,36 @@ export async function directCreateAsaasCustomer(
     const createJson = await createRes.json();
 
     if (!createRes.ok) {
+      // Se deu erro informando que o cliente já existe por CPF ou email, tenta recuperar e atualizar
+      const errorStr = JSON.stringify(createJson);
+      if (errorStr.includes('já cadastrado') || errorStr.includes('already exists') || errorStr.includes('CPF') || errorStr.includes('email')) {
+        try {
+          const retrySearchUrl = `${activeBaseUrl}/v3/customers?cpfCnpj=${encodeURIComponent(sanitizedCpfCnpj)}`;
+          const retrySearchRes = await fetch(retrySearchUrl, { method: 'GET', headers });
+          if (retrySearchRes.ok) {
+            const retryJson = await retrySearchRes.json();
+            if (retryJson?.data?.[0]?.id) {
+              const matchedId = retryJson.data[0].id;
+              // Atualiza o cadastro para o nome do novo comprador
+              const putRes = await fetch(`${activeBaseUrl}/v3/customers/${matchedId}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload),
+              });
+              const resData = putRes.ok ? await putRes.json() : retryJson.data[0];
+              return {
+                success: true,
+                customer: resData,
+                isExisting: true,
+                details: resData,
+              };
+            }
+          }
+        } catch (conflictErr) {
+          console.warn('[Asaas] Falha ao recuperar cliente após conflito:', conflictErr);
+        }
+      }
+
       let errorMessage = 'Erro ao cadastrar cliente no Asaas.';
       if (Array.isArray(createJson?.errors) && createJson.errors.length > 0) {
         errorMessage = createJson.errors.map((e: any) => e.description || e.code).join(' | ');

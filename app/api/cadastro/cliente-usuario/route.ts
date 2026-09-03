@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
             value: numericPrice,
             nextDueDate,
             cycle: 'MONTHLY',
-            description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta (R$ ${numericPrice.toFixed(2)}/mês)`,
+            description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta - ${trimmedName} (R$ ${numericPrice.toFixed(2)}/mês)`,
             externalReference: `sub_${planId || 'essencial'}_${rawCpf}`,
           },
           mergedAsaasConfig

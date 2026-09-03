@@ -62,7 +62,8 @@ export async function POST(req: NextRequest) {
       'User-Agent': 'VetProOrienta/1.0.0 (https://vetpro-orienta.app)',
     };
 
-    // 1. Estratégia de Prevenção de Duplicidade (Recomendada pela documentação Asaas)
+    // 1. Estratégia de Prevenção de Duplicidade e Atualização no Asaas
+    let existingCustomer: any = null;
     try {
       const searchUrl = `${baseUrl}/v3/customers?cpfCnpj=${encodeURIComponent(sanitizedCpfCnpj)}`;
       const searchRes = await fetch(searchUrl, {
@@ -73,13 +74,18 @@ export async function POST(req: NextRequest) {
       if (searchRes.ok) {
         const searchJson = await searchRes.json();
         if (searchJson && Array.isArray(searchJson.data) && searchJson.data.length > 0) {
-          const existingCustomer = searchJson.data[0];
-          return NextResponse.json({
-            success: true,
-            customer: existingCustomer,
-            isExisting: true,
-            message: `Cliente '${existingCustomer.name}' já cadastrado no Asaas. Identificador recuperado.`,
-          });
+          existingCustomer = searchJson.data[0];
+        }
+      }
+
+      if (!existingCustomer && customer.email && customer.email.trim()) {
+        const emailSearchUrl = `${baseUrl}/v3/customers?email=${encodeURIComponent(customer.email.trim())}`;
+        const emailRes = await fetch(emailSearchUrl, { method: 'GET', headers });
+        if (emailRes.ok) {
+          const emailJson = await emailRes.json();
+          if (emailJson && Array.isArray(emailJson.data) && emailJson.data.length > 0) {
+            existingCustomer = emailJson.data[0];
+          }
         }
       }
     } catch (searchErr) {
@@ -93,7 +99,7 @@ export async function POST(req: NextRequest) {
     };
 
     if (customer.email && customer.email.trim()) {
-      customerPayload.email = customer.email.trim();
+      customerPayload.email = customer.email.trim().toLowerCase();
     }
     if (mobilePhone && mobilePhone.length >= 10) {
       customerPayload.mobilePhone = mobilePhone;
@@ -118,6 +124,36 @@ export async function POST(req: NextRequest) {
       customerPayload.additionalEmails = customer.additionalEmails;
     }
 
+    // Se já existia, atualiza os dados no Asaas para o nome do novo comprador
+    if (existingCustomer?.id) {
+      try {
+        const updateUrl = `${baseUrl}/v3/customers/${existingCustomer.id}`;
+        const updateRes = await fetch(updateUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(customerPayload),
+        });
+        if (updateRes.ok) {
+          const updated = await updateRes.json();
+          return NextResponse.json({
+            success: true,
+            customer: updated,
+            isExisting: true,
+            message: `Dados do cliente '${updated.name}' atualizados com sucesso no Asaas.`,
+          });
+        }
+      } catch (upErr) {
+        console.warn('Erro ao atualizar cliente existente no Asaas:', upErr);
+      }
+
+      return NextResponse.json({
+        success: true,
+        customer: { ...existingCustomer, ...customerPayload, id: existingCustomer.id },
+        isExisting: true,
+        message: `Cliente '${customerPayload.name}' recuperado no Asaas.`,
+      });
+    }
+
     // 3. Chamada de criação no Asaas: POST /v3/customers
     const targetUrl = `${baseUrl}/v3/customers`;
     const asaasRes = await fetch(targetUrl, {
@@ -129,6 +165,34 @@ export async function POST(req: NextRequest) {
     const resJson = await asaasRes.json();
 
     if (!asaasRes.ok) {
+      // Se deu erro de duplicidade, tenta atualizar
+      const errStr = JSON.stringify(resJson);
+      if (errStr.includes('já cadastrado') || errStr.includes('already exists') || errStr.includes('CPF') || errStr.includes('email')) {
+        try {
+          const searchDupUrl = `${baseUrl}/v3/customers?cpfCnpj=${encodeURIComponent(sanitizedCpfCnpj)}`;
+          const searchDupRes = await fetch(searchDupUrl, { method: 'GET', headers });
+          if (searchDupRes.ok) {
+            const dupJson = await searchDupRes.json();
+            if (dupJson?.data?.[0]?.id) {
+              const dupId = dupJson.data[0].id;
+              const putRes = await fetch(`${baseUrl}/v3/customers/${dupId}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(customerPayload),
+              });
+              const resData = putRes.ok ? await putRes.json() : dupJson.data[0];
+              return NextResponse.json({
+                success: true,
+                customer: resData,
+                isExisting: true,
+                message: `Cliente atualizado com sucesso no Asaas.`,
+              });
+            }
+          }
+        } catch (dupErr) {
+          console.warn('Erro ao atualizar cliente em conflito:', dupErr);
+        }
+      }
       let errorMessage = 'Erro ao cadastrar cliente no Asaas.';
       if (Array.isArray(resJson?.errors) && resJson.errors.length > 0) {
         errorMessage = resJson.errors.map((e: any) => e.description || e.code).join(' | ');
