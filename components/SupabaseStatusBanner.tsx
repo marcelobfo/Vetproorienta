@@ -47,17 +47,17 @@ export function SupabaseStatusBanner() {
 
   return (
     <>
-      <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+      <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm w-full max-w-full overflow-hidden">
+        <div className="flex items-start sm:items-center gap-3 min-w-0">
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 ${
             configured ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
           }`}>
             <Database className="w-4 h-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-bold text-brand-text">Status do Banco Supabase:</span>
-              <span className={`px-2 py-0.5 rounded-full font-semibold text-[11px] flex items-center gap-1 ${
+              <span className={`px-2 py-0.5 rounded-full font-semibold text-[11px] inline-flex items-center gap-1 shrink-0 ${
                 configured ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
               }`}>
                 {configured ? (
@@ -71,17 +71,17 @@ export function SupabaseStatusBanner() {
                 )}
               </span>
             </div>
-            <div className="text-[11px] text-brand-text-muted mt-0.5">
+            <div className="text-[11px] text-brand-text-muted mt-0.5 break-words">
               {statusMsg ? statusMsg.text : configured ? 'Os dados estão sendo salvos e lidos diretamente do PostgreSQL Supabase.' : 'Insira sua URL e Anon Key do Supabase para persistir tabelas e dados.'}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-brand-border-strong/50">
           <button
             onClick={handleTest}
             disabled={testing}
-            className="px-3 py-1.5 bg-brand-surface-2 hover:bg-brand-surface-2/80 text-brand-text border border-brand-border-strong rounded-xl transition-all flex items-center gap-1.5 font-medium disabled:opacity-50"
+            className="flex-1 sm:flex-initial px-3 py-1.5 bg-brand-surface-2 hover:bg-brand-surface-2/80 text-brand-text border border-brand-border-strong rounded-xl transition-all flex items-center justify-center gap-1.5 font-medium disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
             {testing ? 'Testando...' : 'Testar Conexão'}
@@ -89,7 +89,7 @@ export function SupabaseStatusBanner() {
 
           <button
             onClick={() => setIsConfigOpen(true)}
-            className="px-3 py-1.5 bg-brand-teal text-brand-bg hover:bg-brand-teal/90 rounded-xl transition-all flex items-center gap-1.5 font-bold shadow-sm"
+            className="flex-1 sm:flex-initial px-3 py-1.5 bg-brand-teal text-brand-bg hover:bg-brand-teal/90 rounded-xl transition-all flex items-center justify-center gap-1.5 font-bold shadow-sm"
           >
             <Settings2 className="w-3.5 h-3.5" />
             Configurar Chaves

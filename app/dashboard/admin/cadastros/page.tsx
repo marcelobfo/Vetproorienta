@@ -56,11 +56,17 @@ export default function CentralCadastrosPage() {
     whatsappUrl?: string;
     error?: string;
     copied: boolean;
+    phoneOverride?: string;
+    isSendingEvolution?: boolean;
+    evolutionStatus?: { success: boolean; text: string } | null;
   }>({
     isOpen: false,
     tutor: null,
     loading: false,
     copied: false,
+    phoneOverride: '',
+    isSendingEvolution: false,
+    evolutionStatus: null,
   });
 
   // Estados de Exclusão Segura
@@ -229,25 +235,46 @@ export default function CentralCadastrosPage() {
       const data = await res.json();
 
       if (data.success) {
+        const phone = tutor.phone || '';
+        const clientName = tutor.name || 'Tutor';
+        const planName = data.planName || tutor.plan_name || 'Essencial';
+        const val = data.value || planPrice;
+        const invUrl = data.invoiceUrl || data.paymentUrl;
+        const pixCode = data.pixCopiaECola;
+
+        // Monta fallback whatsappUrl caso não venha da API
+        const text = encodeURIComponent(
+          `Olá ${clientName}! Segue a cobrança do seu plano ${planName} VetPro (R$ ${val.toFixed(2)}):\n\n` +
+          (pixCode ? `Chave Pix Copia e Cola:\n${pixCode}\n\n` : '') +
+          (invUrl ? `Link da Fatura Asaas: ${invUrl}\n\n` : '') +
+          `Agradecemos pela confiança na saúde do seu pet!`
+        );
+        const cleanPhone = phone.replace(/\D/g, '');
+        const fullPhone = cleanPhone.length <= 11 && !cleanPhone.startsWith('55') ? `55${cleanPhone}` : cleanPhone;
+        const computedWhatsappUrl = data.whatsappUrl || `https://wa.me/${fullPhone}?text=${text}`;
+
         setInvoiceModalState({
           isOpen: true,
           tutor,
           loading: false,
-          invoiceUrl: data.invoiceUrl || data.paymentUrl,
+          invoiceUrl: invUrl,
           pixQrCode: data.pixQrCodeImage,
-          pixCopiaECola: data.pixCopiaECola,
+          pixCopiaECola: pixCode,
           bankSlipUrl: data.bankSlipUrl,
           customerId: data.customerId,
           subscriptionId: data.subscriptionId,
           status: data.status || 'PENDING',
-          value: data.value || planPrice,
-          planName: data.planName || tutor.plan_name,
-          whatsappUrl: data.whatsappUrl,
+          value: val,
+          planName: planName,
+          whatsappUrl: computedWhatsappUrl,
           copied: false,
+          phoneOverride: phone,
+          isSendingEvolution: false,
+          evolutionStatus: null,
         });
 
         // Atualiza tutor localmente e recarrega
-        showToast('Cobrança gerada no Asaas com sucesso!');
+        showToast('Cobrança e Pix carregados com sucesso!');
         loadAllData();
       } else {
         setInvoiceModalState(prev => ({
@@ -265,6 +292,73 @@ export default function CentralCadastrosPage() {
       }));
       showToast('Erro de conexão ao gerar fatura.', 'error');
     }
+  };
+
+  const handleSendWhatsAppFromInvoiceModal = async () => {
+    const tutor = invoiceModalState.tutor;
+    const phone = invoiceModalState.phoneOverride || tutor?.phone;
+    if (!phone) {
+      showToast('Informe o número de WhatsApp com DDD para envio.', 'error');
+      return;
+    }
+
+    setInvoiceModalState(prev => ({ ...prev, isSendingEvolution: true, evolutionStatus: null }));
+
+    try {
+      const res = await fetch('/api/asaas/send-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          customerName: tutor?.name || 'Tutor',
+          planName: invoiceModalState.planName || tutor?.plan_name || 'Essencial',
+          planPrice: invoiceModalState.value || 9.90,
+          pixCopiaECola: invoiceModalState.pixCopiaECola,
+          invoiceUrl: invoiceModalState.invoiceUrl,
+          paymentLink: invoiceModalState.invoiceUrl,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast('Mensagem com Pix enviada com sucesso pelo WhatsApp!');
+        setInvoiceModalState(prev => ({
+          ...prev,
+          isSendingEvolution: false,
+          evolutionStatus: {
+            success: true,
+            text: `✅ Mensagem enviada com sucesso via Evolution API para ${phone}!`,
+          },
+        }));
+      } else {
+        const errorMsg = data.error || 'Evolution API não conectada.';
+        setInvoiceModalState(prev => ({
+          ...prev,
+          isSendingEvolution: false,
+          evolutionStatus: {
+            success: false,
+            text: `⚠️ Instância Evolution API temporariamente desconectada. Utilize o botão "Abrir WhatsApp Web" abaixo para enviar diretamente ao tutor. (${errorMsg})`,
+          },
+        }));
+        showToast('Evolution API desconectada. Utilize o WhatsApp Web.', 'error');
+      }
+    } catch (err: any) {
+      setInvoiceModalState(prev => ({
+        ...prev,
+        isSendingEvolution: false,
+        evolutionStatus: {
+          success: false,
+          text: '⚠️ Falha de comunicação com a Evolution API. Clique em "Abrir WhatsApp Web" para enviar direto pelo navegador.',
+        },
+      }));
+      showToast('Evolution API indisponível. Utilize o WhatsApp Web.', 'error');
+    }
+  };
+
+  const handleResendPixInInvoiceModal = async () => {
+    if (!invoiceModalState.tutor) return;
+    showToast('Atualizando cobrança e gerando novo Pix...');
+    await handleGenerateAsaasForTutor(invoiceModalState.tutor);
   };
 
   const handleApproveSandboxInInvoiceModal = async () => {
@@ -613,8 +707,8 @@ export default function CentralCadastrosPage() {
   }, [parceiros, searchTerm]);
 
   return (
-    <div className="p-4 sm:p-8 h-full overflow-y-auto bg-brand-bg">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="p-3.5 sm:p-6 lg:p-8 h-full overflow-y-auto bg-brand-bg w-full max-w-full overflow-x-hidden">
+      <div className="max-w-6xl mx-auto space-y-6 w-full max-w-full min-w-0">
         
         {/* Toast Notificação */}
         {toastMessage && (
@@ -627,22 +721,22 @@ export default function CentralCadastrosPage() {
         )}
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <span className="bg-brand-teal/15 text-brand-teal text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <span className="bg-brand-teal/15 text-brand-teal text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 shrink-0">
                 <Users className="w-3.5 h-3.5" /> Central de Cadastros Unificada
               </span>
             </div>
-            <h1 className="font-display text-2xl sm:text-3xl font-bold text-brand-text">
+            <h1 className="font-display text-xl sm:text-2xl lg:text-3xl font-bold text-brand-text break-words">
               Gerenciamento de Usuários e Parceiros
             </h1>
-            <p className="text-brand-text-muted text-xs sm:text-sm mt-1">
+            <p className="text-brand-text-muted text-xs sm:text-sm mt-1 break-words">
               Controle centralizado de tutores, médicos-veterinários com CRMV e parceiros credenciados com anúncios rotativos.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
             <button
               onClick={loadAllData}
               className="p-2.5 rounded-xl bg-brand-surface border border-brand-border-strong text-brand-text-muted hover:text-brand-text transition-colors"
@@ -787,7 +881,7 @@ export default function CentralCadastrosPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full min-w-[700px] text-left text-xs">
                   <thead className="bg-brand-surface-2 border-b border-brand-border-strong text-brand-text-muted font-semibold">
                     <tr>
                       <th className="p-4">Nome & Contato</th>
@@ -839,7 +933,15 @@ export default function CentralCadastrosPage() {
                             </div>
                           </td>
                           <td className="p-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap sm:flex-nowrap">
+                              <button
+                                onClick={() => handleGenerateAsaasForTutor(tutor)}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                                title="Enviar WhatsApp e Fatura Pix para este tutor"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                <span>WhatsApp & Pix</span>
+                              </button>
                               <button
                                 onClick={() => handleGenerateAsaasForTutor(tutor)}
                                 className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all ${
@@ -899,7 +1001,7 @@ export default function CentralCadastrosPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full min-w-[650px] text-left text-xs">
                   <thead className="bg-brand-surface-2 border-b border-brand-border-strong text-brand-text-muted font-semibold">
                     <tr>
                       <th className="p-4">Profissional & Contato</th>
@@ -1034,7 +1136,7 @@ export default function CentralCadastrosPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full min-w-[720px] text-left text-xs">
                     <thead className="bg-brand-surface-2 border-b border-brand-border-strong text-brand-text-muted font-semibold">
                       <tr>
                         <th className="p-4">Estabelecimento</th>
@@ -1769,6 +1871,245 @@ export default function CentralCadastrosPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE FATURA, PIX & WHATSAPP DO TUTOR (LAVÍNIA, ETC.) */}
+        {invoiceModalState.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+            <div className="bg-brand-surface border border-brand-border-strong rounded-3xl p-5 sm:p-6 w-full max-w-lg space-y-5 shadow-2xl relative my-auto">
+              
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 border-b border-brand-border-strong pb-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                    <MessageCircle className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display font-bold text-base text-brand-text truncate">
+                      Cobrança & WhatsApp — {invoiceModalState.tutor?.name || 'Tutor'}
+                    </h3>
+                    <p className="text-xs text-brand-text-muted truncate">
+                      Envie a fatura e o código Pix via Evolution API ou WhatsApp Web.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setInvoiceModalState(prev => ({ ...prev, isOpen: false }))}
+                  className="p-1.5 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text-muted hover:text-brand-text shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {invoiceModalState.loading ? (
+                <div className="py-12 text-center space-y-3">
+                  <RefreshCw className="w-8 h-8 text-brand-teal animate-spin mx-auto" />
+                  <p className="text-xs text-brand-text-muted font-medium">
+                    Carregando cobrança e gerando QR Code Pix no Asaas...
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4 text-xs">
+                  
+                  {/* Resumo do Plano e Fatura */}
+                  <div className="p-3.5 rounded-2xl bg-brand-surface-2 border border-brand-border-strong space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-brand-text text-sm">
+                        Plano {invoiceModalState.planName || invoiceModalState.tutor?.plan_name || 'Essencial'}
+                      </span>
+                      <span className="font-mono font-bold text-emerald-400 text-sm">
+                        R$ {(invoiceModalState.value || 9.90).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-brand-text-muted">
+                      <span>E-mail: <strong className="text-brand-text">{invoiceModalState.tutor?.email}</strong></span>
+                      {invoiceModalState.customerId && (
+                        <span>ID Asaas: <code className="font-mono text-brand-teal">{invoiceModalState.customerId}</code></span>
+                      )}
+                      <span className={`px-2 py-0.5 rounded-full font-bold ${
+                        invoiceModalState.status === 'ACTIVE' || invoiceModalState.status === 'RECEIVED'
+                          ? 'bg-emerald-500/15 text-emerald-400'
+                          : 'bg-amber-500/15 text-amber-400'
+                      }`}>
+                        {invoiceModalState.status === 'ACTIVE' || invoiceModalState.status === 'RECEIVED'
+                          ? 'Ativo / Pago'
+                          : 'Aguardando Pagamento'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Telefone / WhatsApp do Tutor */}
+                  <div>
+                    <label className="block text-brand-text font-medium mb-1 flex items-center justify-between">
+                      <span>WhatsApp do Tutor (com DDD)</span>
+                      <span className="text-[11px] text-brand-text-muted">Ex: 11999998888</span>
+                    </label>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-muted" />
+                      <input
+                        type="text"
+                        value={invoiceModalState.phoneOverride || ''}
+                        onChange={(e) => {
+                          const newPhone = e.target.value;
+                          const cleanPhone = newPhone.replace(/\D/g, '');
+                          const fullPhone = cleanPhone.length <= 11 && !cleanPhone.startsWith('55') ? `55${cleanPhone}` : cleanPhone;
+                          const text = encodeURIComponent(
+                            `Olá ${invoiceModalState.tutor?.name || 'Tutor'}! Segue a cobrança do seu plano ${invoiceModalState.planName || 'Essencial'} VetPro (R$ ${(invoiceModalState.value || 9.90).toFixed(2)}):\n\n` +
+                            (invoiceModalState.pixCopiaECola ? `Chave Pix Copia e Cola:\n${invoiceModalState.pixCopiaECola}\n\n` : '') +
+                            (invoiceModalState.invoiceUrl ? `Link da Fatura Asaas: ${invoiceModalState.invoiceUrl}\n\n` : '') +
+                            `Agradecemos pela confiança na saúde do seu pet!`
+                          );
+                          setInvoiceModalState(prev => ({
+                            ...prev,
+                            phoneOverride: newPhone,
+                            whatsappUrl: `https://wa.me/${fullPhone}?text=${text}`
+                          }));
+                        }}
+                        placeholder="DDD + Número (ex: 11999998888)"
+                        className="w-full pl-9 pr-3 py-2.5 bg-brand-bg border border-brand-border-strong rounded-xl text-brand-text font-mono text-xs focus:outline-none focus:border-brand-teal"
+                      />
+                    </div>
+                  </div>
+
+                  {/* PIX QR CODE & COPIA E COLA */}
+                  {invoiceModalState.pixCopiaECola && (
+                    <div className="p-4 rounded-2xl bg-brand-surface-2/70 border border-brand-teal/20 space-y-3 text-center">
+                      <div className="flex items-center justify-center gap-2 text-xs font-bold text-brand-text">
+                        <QrCode className="w-4 h-4 text-brand-teal" />
+                        Pix Instantâneo (Liberação Imediata)
+                      </div>
+                      
+                      {invoiceModalState.pixQrCode && (
+                        <div className="inline-block p-2 bg-white rounded-2xl shadow-md">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={invoiceModalState.pixQrCode.startsWith('data:') ? invoiceModalState.pixQrCode : `data:image/png;base64,${invoiceModalState.pixQrCode}`}
+                            alt="QR Code Pix"
+                            className="w-36 h-36 object-contain mx-auto"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={invoiceModalState.pixCopiaECola}
+                          className="w-full px-3 py-2 bg-brand-surface border border-brand-border-strong rounded-xl text-[11px] font-mono text-brand-text-muted truncate"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (invoiceModalState.pixCopiaECola) {
+                              navigator.clipboard.writeText(invoiceModalState.pixCopiaECola);
+                              setInvoiceModalState(prev => ({ ...prev, copied: true }));
+                              setTimeout(() => setInvoiceModalState(prev => ({ ...prev, copied: false })), 2500);
+                              showToast('Código Pix Copia e Cola copiado!');
+                            }
+                          }}
+                          className="px-3 py-2 rounded-xl bg-brand-teal text-brand-bg text-xs font-bold hover:bg-brand-teal/90 transition-colors flex items-center gap-1 shrink-0"
+                        >
+                          {invoiceModalState.copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{invoiceModalState.copied ? 'Copiado!' : 'Copiar Pix'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status de Envio Evolution API */}
+                  {invoiceModalState.evolutionStatus && (
+                    <div className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                      invoiceModalState.evolutionStatus.success
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                    }`}>
+                      {invoiceModalState.evolutionStatus.success ? (
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      )}
+                      <span className="leading-relaxed">{invoiceModalState.evolutionStatus.text}</span>
+                    </div>
+                  )}
+
+                  {/* BOTÕES DE AÇÃO EXIGIDOS */}
+                  <div className="space-y-2.5 pt-2">
+                    {/* Botão 1: Enviar WhatsApp via Evolution API */}
+                    <button
+                      type="button"
+                      onClick={handleSendWhatsAppFromInvoiceModal}
+                      disabled={invoiceModalState.isSendingEvolution || !invoiceModalState.phoneOverride}
+                      className="w-full py-3 px-4 rounded-xl bg-emerald-500 text-white font-bold text-xs hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
+                    >
+                      <Send className={`w-4 h-4 ${invoiceModalState.isSendingEvolution ? 'animate-bounce' : ''}`} />
+                      <span>
+                        {invoiceModalState.isSendingEvolution ? 'Enviando pelo WhatsApp...' : 'Enviar WhatsApp (via Evolution API)'}
+                      </span>
+                    </button>
+
+                    {/* Botão 2: Abrir WhatsApp Web (Fallback com texto pronto) */}
+                    {invoiceModalState.whatsappUrl && (
+                      <a
+                        href={invoiceModalState.whatsappUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-emerald-500/30 text-emerald-400 font-bold text-xs transition-all flex items-center justify-center gap-2"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        <span>Abrir WhatsApp Web</span>
+                        <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                      </a>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      {/* Botão 3: Reenviar Pix */}
+                      <button
+                        type="button"
+                        onClick={handleResendPixInInvoiceModal}
+                        className="py-2.5 px-3 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text font-semibold text-xs transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Reenviar Pix</span>
+                      </button>
+
+                      {/* Botão 4: Abrir Fatura Asaas */}
+                      {invoiceModalState.invoiceUrl ? (
+                        <a
+                          href={invoiceModalState.invoiceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-2.5 px-3 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text font-semibold text-xs transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <CreditCard className="w-3.5 h-3.5 text-brand-teal" />
+                          <span>Abrir Fatura Asaas</span>
+                          <ExternalLink className="w-3 h-3 opacity-60" />
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleApproveSandboxInInvoiceModal}
+                          className="py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-semibold text-xs transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>⚡ Aprovar no Sandbox</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-3 border-t border-brand-border-strong">
+                    <button
+                      onClick={() => setInvoiceModalState(prev => ({ ...prev, isOpen: false }))}
+                      className="px-5 py-2 rounded-xl bg-brand-surface-2 text-brand-text text-xs font-semibold hover:bg-brand-surface"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+
+                </div>
+              )}
             </div>
           </div>
         )}

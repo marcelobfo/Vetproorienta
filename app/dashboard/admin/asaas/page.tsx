@@ -6,7 +6,8 @@ import {
   RefreshCw, UserPlus, ShieldCheck,
   Users, Copy, Check, Repeat, Webhook,
   Settings, Sliders, Eye, EyeOff, RotateCcw,
-  Sparkles, DollarSign, Bell, Shield, Globe
+  Sparkles, DollarSign, Bell, Shield, Globe,
+  MessageCircle, ExternalLink, QrCode, Zap, Send, Phone, Search, X
 } from 'lucide-react';
 import { 
   getAsaasConfig, 
@@ -51,8 +52,42 @@ export default function AsaasAdminPage() {
   // Lista de clientes e assinaturas do Asaas
   const [customersList, setCustomersList] = useState<any[]>([]);
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+
   const [subscriptionsList, setSubscriptionsList] = useState<any[]>([]);
   const [isLoadingSubscriptions, setIsLoadingSubscriptions] = useState(false);
+  const [subscriptionSearchQuery, setSubscriptionSearchQuery] = useState('');
+
+  // Modal de Envio WhatsApp & Fatura Pix
+  const [whatsAppModal, setWhatsAppModal] = useState<{
+    isOpen: boolean;
+    loading: boolean;
+    customerId: string;
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string;
+    subscriptionId?: string;
+    planName: string;
+    planPrice: number;
+    status?: string;
+    pixQrCode?: string;
+    pixCopiaECola?: string;
+    invoiceUrl?: string;
+    bankSlipUrl?: string;
+    whatsappUrl?: string;
+    isSendingEvolution?: boolean;
+    evolutionStatus?: { success: boolean; text: string } | null;
+    copiedPix?: boolean;
+  }>({
+    isOpen: false,
+    loading: false,
+    customerId: '',
+    customerName: '',
+    customerEmail: '',
+    customerPhone: '',
+    planName: 'Essencial',
+    planPrice: 9.90,
+  });
 
   // Toast e Logs
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -122,7 +157,7 @@ export default function AsaasAdminPage() {
     setIsLoadingCustomers(true);
     try {
       const cfg = activeConfig || config;
-      const res = await fetch('/api/asaas/customers?limit=15', {
+      const res = await fetch('/api/asaas/customers?limit=100', {
         headers: {
           'x-asaas-key': cfg.apiKey || '',
           'x-asaas-environment': cfg.environment || 'auto',
@@ -144,7 +179,7 @@ export default function AsaasAdminPage() {
     setIsLoadingSubscriptions(true);
     try {
       const cfg = activeConfig || config;
-      const res = await fetch('/api/asaas/subscriptions?limit=15', {
+      const res = await fetch('/api/asaas/subscriptions?limit=100', {
         headers: {
           'x-asaas-key': cfg.apiKey || '',
           'x-asaas-environment': cfg.environment || 'auto',
@@ -161,6 +196,206 @@ export default function AsaasAdminPage() {
       setIsLoadingSubscriptions(false);
     }
   }, [config]);
+
+  // Abertura do Modal de WhatsApp e Fatura Pix
+  const handleOpenWhatsAppModal = async (target: any, isSubscription = false) => {
+    const customerId = isSubscription ? target.customer : target.id;
+    const customerName = isSubscription ? (target.customerName || 'Cliente Asaas') : (target.name || 'Cliente');
+    const customerEmail = target.email || '';
+    const customerPhone = target.mobilePhone || target.phone || '';
+    const subscriptionId = isSubscription ? target.id : undefined;
+    const planPrice = target.value ? Number(target.value) : (config.planEssencialPrice || 9.90);
+    const planName = target.description?.includes('Especialista') ? 'Especialista' : 'Essencial';
+
+    setWhatsAppModal({
+      isOpen: true,
+      loading: true,
+      customerId,
+      customerName,
+      customerEmail,
+      customerPhone,
+      subscriptionId,
+      planName,
+      planPrice,
+      status: target.status || 'PENDING',
+      isSendingEvolution: false,
+      evolutionStatus: null,
+      copiedPix: false,
+    });
+
+    try {
+      addLog(`🔍 Buscando fatura e Pix do Asaas para '${customerName}'...`);
+      const res = await fetch('/api/asaas/generate-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId,
+          subscriptionId,
+          email: customerEmail || undefined,
+          name: customerName,
+          phone: customerPhone || undefined,
+          planName,
+          planPrice,
+          asaasConfig: {
+            apiKey: config.apiKey,
+            environment: config.environment,
+            customBaseUrl: config.customBaseUrl,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setWhatsAppModal(prev => ({
+          ...prev,
+          loading: false,
+          pixQrCode: data.pixQrCodeImage,
+          pixCopiaECola: data.pixCopiaECola,
+          invoiceUrl: data.invoiceUrl || data.paymentUrl,
+          bankSlipUrl: data.bankSlipUrl,
+          whatsappUrl: data.whatsappUrl,
+          status: data.status || prev.status,
+        }));
+        addLog(`⚡ Fatura e Pix carregados para '${customerName}'.`);
+      } else {
+        setWhatsAppModal(prev => ({
+          ...prev,
+          loading: false,
+          evolutionStatus: { success: false, text: data.error || 'Não foi possível carregar a cobrança no Asaas.' },
+        }));
+      }
+    } catch (err: any) {
+      setWhatsAppModal(prev => ({
+        ...prev,
+        loading: false,
+        evolutionStatus: { success: false, text: err.message || 'Erro ao carregar fatura.' },
+      }));
+    }
+  };
+
+  // Disparo via Evolution API
+  const handleSendEvolutionInModal = async () => {
+    if (!whatsAppModal.customerPhone) {
+      showToast('Por favor, informe o telefone/WhatsApp do tutor acima.', 'error');
+      return;
+    }
+
+    setWhatsAppModal(prev => ({ ...prev, isSendingEvolution: true, evolutionStatus: null }));
+    addLog(`🚀 Disparando WhatsApp via Evolution API para ${whatsAppModal.customerPhone}...`);
+
+    try {
+      const res = await fetch('/api/asaas/send-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: whatsAppModal.customerPhone,
+          name: whatsAppModal.customerName,
+          email: whatsAppModal.customerEmail,
+          planName: whatsAppModal.planName,
+          planPrice: whatsAppModal.planPrice,
+          pixCopiaECola: whatsAppModal.pixCopiaECola,
+          paymentUrl: whatsAppModal.invoiceUrl,
+          bankSlipUrl: whatsAppModal.bankSlipUrl,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.sentViaEvolution) {
+        setWhatsAppModal(prev => ({
+          ...prev,
+          isSendingEvolution: false,
+          evolutionStatus: {
+            success: true,
+            text: '✅ Mensagem enviada com sucesso para o WhatsApp via Evolution API!',
+          },
+        }));
+        addLog(`✅ WhatsApp disparado com sucesso para ${whatsAppModal.customerName}.`);
+        showToast('WhatsApp disparado com sucesso via Evolution API!');
+      } else {
+        setWhatsAppModal(prev => ({
+          ...prev,
+          isSendingEvolution: false,
+          whatsappUrl: data.whatsappUrl || prev.whatsappUrl,
+          evolutionStatus: {
+            success: false,
+            text: data.evolutionError 
+              ? `⚠️ Evolution API não respondeu (${data.evolutionError}). Use o botão 'Abrir WhatsApp Web' abaixo para enviar manualmente.`
+              : '⚠️ Instância da Evolution API desconectada. Clique em "Abrir WhatsApp Web" abaixo para enviar diretamente.',
+          },
+        }));
+        addLog(`⚠️ Evolution API não conectada. Disponibilizado fallback WhatsApp Web.`);
+      }
+    } catch (err: any) {
+      setWhatsAppModal(prev => ({
+        ...prev,
+        isSendingEvolution: false,
+        evolutionStatus: {
+          success: false,
+          text: `⚠️ Erro de rede ao conectar à Evolution API: ${err.message}. Use o botão 'Abrir WhatsApp Web'.`,
+        },
+      }));
+    }
+  };
+
+  // Reenviar / Forçar novo Pix
+  const handleResendPixInModal = async () => {
+    setWhatsAppModal(prev => ({ ...prev, loading: true, evolutionStatus: null }));
+    addLog(`🔄 Gerando nova cobrança/Pix no Asaas para '${whatsAppModal.customerName}'...`);
+
+    try {
+      const res = await fetch('/api/asaas/generate-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: whatsAppModal.customerId,
+          subscriptionId: whatsAppModal.subscriptionId,
+          email: whatsAppModal.customerEmail,
+          name: whatsAppModal.customerName,
+          phone: whatsAppModal.customerPhone,
+          planName: whatsAppModal.planName,
+          planPrice: whatsAppModal.planPrice,
+          forceNewCharge: true,
+          asaasConfig: {
+            apiKey: config.apiKey,
+            environment: config.environment,
+            customBaseUrl: config.customBaseUrl,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setWhatsAppModal(prev => ({
+          ...prev,
+          loading: false,
+          pixQrCode: data.pixQrCodeImage,
+          pixCopiaECola: data.pixCopiaECola,
+          invoiceUrl: data.invoiceUrl || data.paymentUrl,
+          bankSlipUrl: data.bankSlipUrl,
+          whatsappUrl: data.whatsappUrl,
+          status: data.status || prev.status,
+          evolutionStatus: {
+            success: true,
+            text: '⚡ Novo Pix e link de pagamento atualizados com sucesso!',
+          },
+        }));
+        addLog(`⚡ Novo Pix gerado para '${whatsAppModal.customerName}'.`);
+        showToast('Novo Pix gerado com sucesso!');
+      } else {
+        setWhatsAppModal(prev => ({
+          ...prev,
+          loading: false,
+          evolutionStatus: { success: false, text: data.error || 'Falha ao regerar Pix.' },
+        }));
+      }
+    } catch (err: any) {
+      setWhatsAppModal(prev => ({
+        ...prev,
+        loading: false,
+        evolutionStatus: { success: false, text: err.message || 'Erro ao regerar Pix.' },
+      }));
+    }
+  };
 
   const handleTestConnection = useCallback(async (override?: AsaasConfig) => {
     setIsTesting(true);
@@ -370,43 +605,43 @@ export default function AsaasAdminPage() {
   const activeResolvedUrl = getAsaasBaseUrl(config.apiKey, config.environment, config.customBaseUrl);
 
   return (
-    <div className="p-8 h-full overflow-y-auto bg-brand-bg">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="p-3.5 sm:p-6 lg:p-8 h-full overflow-y-auto bg-brand-bg w-full max-w-full overflow-x-hidden">
+      <div className="max-w-6xl mx-auto space-y-6 w-full max-w-full min-w-0">
         
         {/* Toast Notificação */}
         {toastMessage && (
-          <div className={`p-4 rounded-2xl border flex items-center justify-between text-xs font-semibold animate-in fade-in slide-in-from-top-2 ${
+          <div className={`p-4 rounded-2xl border flex items-center justify-between text-xs font-semibold animate-in fade-in slide-in-from-top-2 w-full max-w-full ${
             toastMessage.type === 'success' 
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
               : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
           }`}>
-            <div className="flex items-center gap-2">
-              {toastMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-              <span>{toastMessage.text}</span>
+            <div className="flex items-center gap-2 min-w-0">
+              {toastMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span className="break-words">{toastMessage.text}</span>
             </div>
-            <button onClick={() => setToastMessage(null)} className="opacity-70 hover:opacity-100">✕</button>
+            <button onClick={() => setToastMessage(null)} className="opacity-70 hover:opacity-100 shrink-0 ml-2">✕</button>
           </div>
         )}
 
         {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="bg-brand-teal/15 text-brand-teal text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-brand-teal/30">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="bg-brand-teal/15 text-brand-teal text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-brand-teal/30 shrink-0">
                 Gateway de Pagamentos & Recorrência
               </span>
-              <span className="text-xs text-brand-text-muted">Asaas OpenAPI 3.0</span>
+              <span className="text-xs text-brand-text-muted shrink-0">Asaas OpenAPI 3.0</span>
             </div>
-            <h1 className="font-display text-2xl font-bold">Painel de Configuração Geral do Asaas</h1>
-            <p className="text-sm text-brand-text-muted">
+            <h1 className="font-display text-xl sm:text-2xl font-bold break-words">Painel de Configuração Geral do Asaas</h1>
+            <p className="text-xs sm:text-sm text-brand-text-muted mt-1 break-words">
               Configure credenciais, ambientes (Sandbox/Produção), webhooks, regras de cobrança e precificação de planos internamente.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
             <button
               onClick={handleResetDefaults}
-              className="px-3.5 py-2 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-xs font-semibold text-brand-text flex items-center gap-1.5 transition-colors"
+              className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-xs font-semibold text-brand-text flex items-center justify-center gap-1.5 transition-colors"
               title="Restaurar valores padrão"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -415,7 +650,7 @@ export default function AsaasAdminPage() {
             <button
               onClick={() => handleTestConnection()}
               disabled={isTesting}
-              className="px-4 py-2.5 rounded-xl bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-colors shadow-sm flex items-center gap-2 disabled:opacity-50"
+              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${isTesting ? 'animate-spin' : ''}`} />
               {isTesting ? 'Testando API...' : 'Testar Conexão Asaas'}
@@ -427,7 +662,7 @@ export default function AsaasAdminPage() {
 
         {/* Bloco de Status da Conexão */}
         {testResult && (
-          <div className={`p-4 rounded-2xl border flex items-start gap-3.5 ${
+          <div className={`p-4 rounded-2xl border flex items-start gap-3.5 w-full max-w-full overflow-hidden ${
             testResult.success 
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
               : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
@@ -437,40 +672,40 @@ export default function AsaasAdminPage() {
             ) : (
               <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             )}
-            <div className="text-xs space-y-1 w-full">
-              <div className="font-bold flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  {testResult.success ? 'Conectado ao Asaas com Sucesso' : 'Atenção com a Conexão'}
-                  <span className="bg-brand-surface px-2 py-0.5 rounded text-[10px] text-brand-text font-mono">
+            <div className="text-xs space-y-1 w-full min-w-0">
+              <div className="font-bold flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <span>{testResult.success ? 'Conectado ao Asaas com Sucesso' : 'Atenção com a Conexão'}</span>
+                  <span className="bg-brand-surface px-2 py-0.5 rounded text-[10px] text-brand-text font-mono break-all max-w-full">
                     {activeResolvedUrl}
                   </span>
-                </span>
+                </div>
                 {testResult.details?.environment && (
-                  <span className="bg-brand-surface px-2 py-0.5 rounded text-[10px] text-brand-text">
+                  <span className="bg-brand-surface px-2 py-0.5 rounded text-[10px] text-brand-text shrink-0">
                     Ambiente: {testResult.details.environment}
                   </span>
                 )}
               </div>
-              <p className="opacity-90">{testResult.message}</p>
+              <p className="opacity-90 break-words">{testResult.message}</p>
             </div>
           </div>
         )}
 
         {/* Webhook Banner */}
-        <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
+        <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full max-w-full overflow-hidden">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
             <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
               <Webhook className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="font-display font-bold text-sm text-brand-text flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-display font-bold text-sm text-brand-text flex flex-wrap items-center gap-2">
                 <span>Webhook de Sincronização Automática</span>
-                <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full font-sans font-normal">Ativo</span>
+                <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full font-sans font-normal shrink-0">Ativo</span>
               </h3>
-              <p className="text-xs text-brand-text-muted mt-0.5">
+              <p className="text-xs text-brand-text-muted mt-0.5 break-words">
                 Cole esta URL no painel do Asaas (Minha Conta &gt; Integrações &gt; Webhooks para Cobranças) para ativar pagantes instantaneamente.
               </p>
-              <div className="mt-2 font-mono text-[11px] bg-brand-bg px-3 py-1.5 rounded-lg border border-brand-border-strong text-brand-teal inline-block">
+              <div className="mt-2 font-mono text-[11px] bg-brand-bg px-3 py-1.5 rounded-lg border border-brand-border-strong text-brand-teal break-all max-w-full select-all">
                 {webhookUrl}
               </div>
             </div>
@@ -478,7 +713,7 @@ export default function AsaasAdminPage() {
 
           <button
             onClick={copyWebhookUrl}
-            className="px-4 py-2.5 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-xs font-semibold text-brand-text flex items-center gap-2 shrink-0 transition-colors"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-xs font-semibold text-brand-text flex items-center justify-center gap-2 shrink-0 transition-colors"
           >
             {copiedWebhook ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
             {copiedWebhook ? 'URL Copiada!' : 'Copiar URL do Webhook'}
@@ -938,20 +1173,43 @@ export default function AsaasAdminPage() {
         {/* Bloco 4: Tabelas de Clientes e Assinaturas */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Lista de Clientes Recentes */}
-          <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-brand-border-strong pb-3">
+          <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-4 sm:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-border-strong pb-3">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-brand-teal" />
                 <h3 className="font-display font-bold text-base">Clientes no Asaas</h3>
+                <span className="text-[11px] bg-brand-teal/15 text-brand-teal px-2 py-0.5 rounded-full font-bold">
+                  {customersList.length}
+                </span>
               </div>
               <button
                 onClick={() => void fetchRecentCustomers()}
                 disabled={isLoadingCustomers}
-                className="text-xs text-brand-teal hover:underline flex items-center gap-1"
+                className="text-xs text-brand-teal hover:underline flex items-center gap-1 shrink-0"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoadingCustomers ? 'animate-spin' : ''}`} />
                 Atualizar
               </button>
+            </div>
+
+            {/* Campo de Busca Rápida (Lavínia, etc.) */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-muted" />
+              <input
+                type="text"
+                value={customerSearchQuery}
+                onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                placeholder="Buscar cliente por nome (ex: Lavínia), CPF ou ID..."
+                className="w-full pl-9 pr-8 py-2 bg-brand-bg border border-brand-border-strong rounded-xl text-xs text-brand-text placeholder:text-brand-text-muted/60 focus:outline-none focus:border-brand-teal"
+              />
+              {customerSearchQuery && (
+                <button
+                  onClick={() => setCustomerSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-text-muted hover:text-brand-text text-xs"
+                >
+                  ✕
+                </button>
+              )}
             </div>
 
             {customersList.length === 0 ? (
@@ -959,35 +1217,68 @@ export default function AsaasAdminPage() {
                 {isLoadingCustomers ? 'Carregando clientes...' : 'Nenhum cliente retornado.'}
               </div>
             ) : (
-              <div className="divide-y divide-brand-border-strong overflow-x-auto max-h-80">
-                <table className="w-full text-left text-xs">
+              <div className="divide-y divide-brand-border-strong overflow-x-auto max-h-96">
+                <table className="w-full text-left text-xs min-w-[500px]">
                   <thead>
                     <tr className="text-brand-text-muted font-semibold">
-                      <th className="pb-2">ID</th>
-                      <th className="pb-2">Nome</th>
-                      <th className="pb-2">CPF/CNPJ</th>
-                      <th className="pb-2 text-right">Ação</th>
+                      <th className="pb-2">Cliente / Contato</th>
+                      <th className="pb-2">CPF / ID</th>
+                      <th className="pb-2 text-right">Ações Rápidas</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-brand-border-strong/50">
-                    {customersList.map((c) => (
-                      <tr key={c.id} className="hover:bg-brand-surface-2/30">
-                        <td className="py-2.5 font-mono text-brand-teal font-medium">{c.id}</td>
-                        <td className="py-2.5 font-semibold text-brand-text">{c.name}</td>
-                        <td className="py-2.5 font-mono text-brand-text-muted">{c.cpfCnpj}</td>
-                        <td className="py-2.5 text-right">
-                          <button
-                            onClick={() => {
-                              setSelectedCustomerId(c.id);
-                              showToast(`Cliente '${c.name}' selecionado para criar assinatura.`);
-                            }}
-                            className="text-[11px] text-brand-teal hover:underline font-semibold"
-                          >
-                            Assinar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {customersList
+                      .filter(c => {
+                        if (!customerSearchQuery.trim()) return true;
+                        const q = customerSearchQuery.toLowerCase().trim();
+                        return (
+                          (c.name && c.name.toLowerCase().includes(q)) ||
+                          (c.cpfCnpj && c.cpfCnpj.includes(q)) ||
+                          (c.id && c.id.toLowerCase().includes(q)) ||
+                          (c.email && c.email.toLowerCase().includes(q)) ||
+                          (c.mobilePhone && c.mobilePhone.includes(q)) ||
+                          (c.phone && c.phone.includes(q))
+                        );
+                      })
+                      .map((c) => (
+                        <tr key={c.id} className="hover:bg-brand-surface-2/30 transition-colors">
+                          <td className="py-2.5">
+                            <div className="font-semibold text-brand-text">{c.name}</div>
+                            <div className="text-[11px] text-brand-text-muted flex items-center gap-1.5 mt-0.5">
+                              {c.mobilePhone || c.phone ? (
+                                <span className="text-emerald-400 font-mono">{c.mobilePhone || c.phone}</span>
+                              ) : null}
+                              {c.email && <span className="truncate max-w-[140px] opacity-75">{c.email}</span>}
+                            </div>
+                          </td>
+                          <td className="py-2.5">
+                            <div className="font-mono text-brand-text-muted">{c.cpfCnpj || 'Não informado'}</div>
+                            <div className="font-mono text-[10px] text-brand-teal">{c.id}</div>
+                          </td>
+                          <td className="py-2.5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenWhatsAppModal(c)}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
+                                title="Enviar WhatsApp e Fatura Pix para este cliente"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                <span>WhatsApp & Pix</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedCustomerId(c.id);
+                                  showToast(`Cliente '${c.name}' selecionado para criar assinatura.`);
+                                }}
+                                className="px-2 py-1.5 rounded-lg bg-brand-surface-2 hover:bg-brand-surface text-[11px] text-brand-teal font-semibold border border-brand-border-strong transition-colors"
+                                title="Criar assinatura recorrente para este cliente"
+                              >
+                                Assinar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
@@ -995,20 +1286,43 @@ export default function AsaasAdminPage() {
           </div>
 
           {/* Lista de Assinaturas Recentes */}
-          <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-brand-border-strong pb-3">
+          <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-4 sm:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-border-strong pb-3">
               <div className="flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-display font-bold text-base">Assinaturas Recorrentes</h3>
+                <span className="text-[11px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                  {subscriptionsList.length}
+                </span>
               </div>
               <button
                 onClick={() => void fetchRecentSubscriptions()}
                 disabled={isLoadingSubscriptions}
-                className="text-xs text-brand-teal hover:underline flex items-center gap-1"
+                className="text-xs text-brand-teal hover:underline flex items-center gap-1 shrink-0"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSubscriptions ? 'animate-spin' : ''}`} />
                 Atualizar
               </button>
+            </div>
+
+            {/* Campo de Busca Rápida de Assinaturas */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-muted" />
+              <input
+                type="text"
+                value={subscriptionSearchQuery}
+                onChange={(e) => setSubscriptionSearchQuery(e.target.value)}
+                placeholder="Buscar por cliente, ID de assinatura ou valor..."
+                className="w-full pl-9 pr-8 py-2 bg-brand-bg border border-brand-border-strong rounded-xl text-xs text-brand-text placeholder:text-brand-text-muted/60 focus:outline-none focus:border-brand-teal"
+              />
+              {subscriptionSearchQuery && (
+                <button
+                  onClick={() => setSubscriptionSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-text-muted hover:text-brand-text text-xs"
+                >
+                  ✕
+                </button>
+              )}
             </div>
 
             {subscriptionsList.length === 0 ? (
@@ -1016,31 +1330,76 @@ export default function AsaasAdminPage() {
                 {isLoadingSubscriptions ? 'Carregando assinaturas...' : 'Nenhuma assinatura registrada ainda.'}
               </div>
             ) : (
-              <div className="divide-y divide-brand-border-strong overflow-x-auto max-h-80">
-                <table className="w-full text-left text-xs">
+              <div className="divide-y divide-brand-border-strong overflow-x-auto max-h-96">
+                <table className="w-full text-left text-xs min-w-[500px]">
                   <thead>
                     <tr className="text-brand-text-muted font-semibold">
-                      <th className="pb-2">ID Assinatura</th>
-                      <th className="pb-2">Cliente</th>
-                      <th className="pb-2">Valor</th>
-                      <th className="pb-2">Status</th>
+                      <th className="pb-2">Cliente / ID</th>
+                      <th className="pb-2">Valor & Status</th>
+                      <th className="pb-2 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-brand-border-strong/50">
-                    {subscriptionsList.map((s) => (
-                      <tr key={s.id} className="hover:bg-brand-surface-2/30">
-                        <td className="py-2.5 font-mono text-brand-teal font-medium">{s.id}</td>
-                        <td className="py-2.5 font-mono text-brand-text-muted">{s.customer}</td>
-                        <td className="py-2.5 font-semibold text-brand-text">R$ {s.value}</td>
-                        <td className="py-2.5">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            s.status === 'ACTIVE' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'
-                          }`}>
-                            {s.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {subscriptionsList
+                      .filter(s => {
+                        if (!subscriptionSearchQuery.trim()) return true;
+                        const q = subscriptionSearchQuery.toLowerCase().trim();
+                        const clientName = customersList.find(c => c.id === s.customer)?.name?.toLowerCase() || '';
+                        return (
+                          (s.id && s.id.toLowerCase().includes(q)) ||
+                          (s.customer && s.customer.toLowerCase().includes(q)) ||
+                          clientName.includes(q) ||
+                          String(s.value).includes(q)
+                        );
+                      })
+                      .map((s) => {
+                        const matchedClient = customersList.find(c => c.id === s.customer);
+                        return (
+                          <tr key={s.id} className="hover:bg-brand-surface-2/30 transition-colors">
+                            <td className="py-2.5">
+                              <div className="font-semibold text-brand-text">
+                                {matchedClient ? matchedClient.name : `Cliente Asaas (${s.customer})`}
+                              </div>
+                              <div className="font-mono text-[10px] text-brand-teal">{s.id}</div>
+                            </td>
+                            <td className="py-2.5">
+                              <div className="font-semibold text-brand-text">R$ {s.value}</div>
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-0.5 ${
+                                s.status === 'ACTIVE' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'
+                              }`}>
+                                {s.status === 'ACTIVE' ? 'Ativo' : s.status}
+                              </span>
+                            </td>
+                            <td className="py-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleOpenWhatsAppModal({
+                                    ...s,
+                                    name: matchedClient ? matchedClient.name : undefined,
+                                    email: matchedClient ? matchedClient.email : undefined,
+                                    mobilePhone: matchedClient ? (matchedClient.mobilePhone || matchedClient.phone) : undefined,
+                                  }, true)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-colors flex items-center gap-1 shadow-sm"
+                                  title="Enviar WhatsApp e Pix desta assinatura"
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5" />
+                                  <span>WhatsApp</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSandboxPaymentId(s.id);
+                                    showToast(`ID ${s.id} selecionado para teste Sandbox.`);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs transition-colors"
+                                  title="Testar aprovação no Sandbox"
+                                >
+                                  <Zap className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
@@ -1109,6 +1468,221 @@ export default function AsaasAdminPage() {
         </div>
 
       </div>
+
+      {/* MODAL DE ENVIO DE WHATSAPP & FATURA PIX */}
+      {whatsAppModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+          <div className="bg-brand-surface border border-brand-border-strong rounded-3xl p-5 sm:p-6 w-full max-w-lg space-y-5 shadow-2xl relative my-auto">
+            
+            {/* Header do Modal */}
+            <div className="flex items-start justify-between gap-3 border-b border-brand-border-strong pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                  <MessageCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-base text-brand-text">
+                    Cobrança & WhatsApp — {whatsAppModal.customerName}
+                  </h3>
+                  <p className="text-xs text-brand-text-muted">
+                    Envie a fatura e o código Pix via Evolution API ou WhatsApp Web direto.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setWhatsAppModal(prev => ({ ...prev, isOpen: false }))}
+                className="p-1.5 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text-muted hover:text-brand-text"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {whatsAppModal.loading ? (
+              <div className="py-12 text-center space-y-3">
+                <RefreshCw className="w-8 h-8 text-brand-teal animate-spin mx-auto" />
+                <p className="text-xs text-brand-text-muted font-medium">
+                  Consultando cobrança e gerando QR Code Pix no Asaas...
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4 text-xs">
+                
+                {/* Resumo do Cliente & Plano */}
+                <div className="p-3.5 rounded-2xl bg-brand-surface-2 border border-brand-border-strong space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-brand-text text-sm">
+                      Plano {whatsAppModal.planName}
+                    </span>
+                    <span className="font-mono font-bold text-emerald-400 text-sm">
+                      R$ {whatsAppModal.planPrice.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-brand-text-muted">
+                    <span>ID Asaas: <code className="font-mono text-brand-teal">{whatsAppModal.customerId}</code></span>
+                    {whatsAppModal.status && (
+                      <span className={`px-2 py-0.5 rounded-full font-bold ${
+                        whatsAppModal.status === 'ACTIVE' || whatsAppModal.status === 'RECEIVED'
+                          ? 'bg-emerald-500/15 text-emerald-400'
+                          : 'bg-amber-500/15 text-amber-400'
+                      }`}>
+                        {whatsAppModal.status === 'ACTIVE' || whatsAppModal.status === 'RECEIVED' ? 'Ativo / Pago' : 'Aguardando Pagamento'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Telefone / WhatsApp do Tutor */}
+                <div>
+                  <label className="block text-brand-text font-medium mb-1 flex items-center justify-between">
+                    <span>Número do WhatsApp (com DDD)</span>
+                    <span className="text-[11px] text-brand-text-muted">Ex: 5511999999999</span>
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-muted" />
+                    <input
+                      type="text"
+                      value={whatsAppModal.customerPhone}
+                      onChange={(e) => setWhatsAppModal(prev => ({ ...prev, customerPhone: e.target.value }))}
+                      placeholder="DDD + Número (ex: 11999998888)"
+                      className="w-full pl-9 pr-3 py-2.5 bg-brand-bg border border-brand-border-strong rounded-xl text-brand-text font-mono text-xs focus:outline-none focus:border-brand-teal"
+                    />
+                  </div>
+                </div>
+
+                {/* PIX QR CODE & COPIA E COLA */}
+                {whatsAppModal.pixCopiaECola && (
+                  <div className="p-4 rounded-2xl bg-brand-surface-2/70 border border-brand-teal/20 space-y-3 text-center">
+                    <div className="flex items-center justify-center gap-2 text-xs font-bold text-brand-text">
+                      <QrCode className="w-4 h-4 text-brand-teal" />
+                      Pix Instantâneo (Liberação Imediata)
+                    </div>
+                    
+                    {whatsAppModal.pixQrCode && (
+                      <div className="inline-block p-2 bg-white rounded-2xl shadow-md">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={whatsAppModal.pixQrCode.startsWith('data:') ? whatsAppModal.pixQrCode : `data:image/png;base64,${whatsAppModal.pixQrCode}`}
+                          alt="QR Code Pix"
+                          className="w-36 h-36 object-contain mx-auto"
+                        />
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={whatsAppModal.pixCopiaECola}
+                        className="w-full px-3 py-2 bg-brand-surface border border-brand-border-strong rounded-xl text-[11px] font-mono text-brand-text-muted truncate"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (whatsAppModal.pixCopiaECola) {
+                            navigator.clipboard.writeText(whatsAppModal.pixCopiaECola);
+                            setWhatsAppModal(prev => ({ ...prev, copiedPix: true }));
+                            setTimeout(() => setWhatsAppModal(prev => ({ ...prev, copiedPix: false })), 2500);
+                            showToast('Código Pix Copia e Cola copiado!');
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl bg-brand-teal text-brand-bg text-xs font-bold hover:bg-brand-teal/90 transition-colors flex items-center gap-1 shrink-0"
+                      >
+                        {whatsAppModal.copiedPix ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{whatsAppModal.copiedPix ? 'Copiado!' : 'Copiar Pix'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Status de Envio Evolution API */}
+                {whatsAppModal.evolutionStatus && (
+                  <div className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                    whatsAppModal.evolutionStatus.success
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                  }`}>
+                    {whatsAppModal.evolutionStatus.success ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    )}
+                    <span className="leading-relaxed">{whatsAppModal.evolutionStatus.text}</span>
+                  </div>
+                )}
+
+                {/* BOTÕES DE AÇÃO EXIGIDOS */}
+                <div className="space-y-2.5 pt-2">
+                  {/* Botão 1: Enviar WhatsApp via Evolution API */}
+                  <button
+                    type="button"
+                    onClick={handleSendEvolutionInModal}
+                    disabled={whatsAppModal.isSendingEvolution || !whatsAppModal.customerPhone}
+                    className="w-full py-3 px-4 rounded-xl bg-emerald-500 text-white font-bold text-xs hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
+                  >
+                    <Send className={`w-4 h-4 ${whatsAppModal.isSendingEvolution ? 'animate-bounce' : ''}`} />
+                    <span>
+                      {whatsAppModal.isSendingEvolution ? 'Enviando pelo WhatsApp...' : 'Enviar WhatsApp (via Evolution API)'}
+                    </span>
+                  </button>
+
+                  {/* Botão 2: Abrir WhatsApp Web (Fallback com texto pronto) */}
+                  {whatsAppModal.whatsappUrl && (
+                    <a
+                      href={whatsAppModal.whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2.5 px-4 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-emerald-500/30 text-emerald-400 font-bold text-xs transition-all flex items-center justify-center gap-2"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Abrir WhatsApp Web</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                    </a>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {/* Botão 3: Reenviar / Atualizar Pix */}
+                    <button
+                      type="button"
+                      onClick={handleResendPixInModal}
+                      className="py-2.5 px-3 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text font-semibold text-xs transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Reenviar Pix</span>
+                    </button>
+
+                    {/* Botão 4: Abrir Fatura Asaas */}
+                    {whatsAppModal.invoiceUrl ? (
+                      <a
+                        href={whatsAppModal.invoiceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-2.5 px-3 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text font-semibold text-xs transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 text-brand-teal" />
+                        <span>Abrir Fatura Asaas</span>
+                        <ExternalLink className="w-3 h-3 opacity-60" />
+                      </a>
+                    ) : (
+                      <div />
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-3 border-t border-brand-border-strong">
+                  <button
+                    onClick={() => setWhatsAppModal(prev => ({ ...prev, isOpen: false }))}
+                    className="px-5 py-2 rounded-xl bg-brand-surface-2 text-brand-text text-xs font-semibold hover:bg-brand-surface"
+                  >
+                    Fechar
+                  </button>
+                </div>
+
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
