@@ -34,17 +34,140 @@ export interface VetRecord {
   updated_at?: string;
 }
 
+export const DEFAULT_TUTORS: TutorRecord[] = [
+  {
+    id: 'tutor-lavinia-01',
+    name: 'Lavínia Rocha',
+    email: 'lavinia.rocha@email.com',
+    phone: '(11) 98877-6655',
+    cpf: '345.678.901-23',
+    plan_name: 'Especialista',
+    plan_id: 'especialista',
+    subscription_status: 'ACTIVE',
+    asaas_customer_id: 'cus_000005934120',
+    asaas_subscription_id: 'sub_000008432110',
+    status: 'active',
+    pets_count: 2,
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'tutor-carlos-02',
+    name: 'Carlos Eduardo',
+    email: 'carlos.t@gmail.com',
+    phone: '(11) 91234-5678',
+    cpf: '123.456.789-00',
+    plan_name: 'Essencial',
+    plan_id: 'essencial',
+    subscription_status: 'ACTIVE',
+    asaas_customer_id: 'cus_000004123987',
+    asaas_subscription_id: 'sub_000007123987',
+    status: 'active',
+    pets_count: 1,
+    created_at: new Date(Date.now() - 86400000 * 12).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'tutor-marcelo-03',
+    name: 'Marcelo Oliveira',
+    email: 'marcelobfo@gmail.com',
+    phone: '(11) 99999-8888',
+    cpf: '456.789.012-34',
+    plan_name: 'Especialista',
+    plan_id: 'especialista',
+    subscription_status: 'ACTIVE',
+    asaas_customer_id: 'cus_000009988776',
+    asaas_subscription_id: 'sub_000006655443',
+    status: 'active',
+    pets_count: 2,
+    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'tutor-mariana-04',
+    name: 'Mariana Silva',
+    email: 'mariana.silva@petlover.com',
+    phone: '(11) 97654-3210',
+    cpf: '234.567.890-12',
+    plan_name: 'Essencial',
+    plan_id: 'essencial',
+    subscription_status: 'PENDING_PAYMENT',
+    asaas_customer_id: 'cus_000003216549',
+    asaas_subscription_id: 'sub_000005823194',
+    status: 'active',
+    pets_count: 1,
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
+export const DEFAULT_VETS: VetRecord[] = [
+  {
+    id: 'vet-amanda-01',
+    name: 'Dra. Amanda Nogueira',
+    email: 'amanda.vet@saovet.com.br',
+    phone: '(11) 98765-4321',
+    crmv: '34892',
+    crmv_uf: 'SP',
+    crmv_validated: true,
+    specialty: 'Clínica Geral & Cirurgia',
+    clinic_name: 'Clínica Veterinária São Francisco',
+    role: 'veterinario',
+    status: 'active',
+    created_at: new Date(Date.now() - 86400000 * 60).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'vet-roberto-02',
+    name: 'Dr. Roberto Mendes',
+    email: 'roberto@saovet.com.br',
+    phone: '(11) 97777-6666',
+    crmv: '18204',
+    crmv_uf: 'SP',
+    crmv_validated: true,
+    specialty: 'Cardiologia & Diretor Clínico',
+    clinic_name: 'Hospital Veterinário PetCare 24h',
+    role: 'admin',
+    status: 'active',
+    created_at: new Date(Date.now() - 86400000 * 90).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'vet-camila-03',
+    name: 'Dra. Camila Torres',
+    email: 'camila.torres@amigofiel.vet.br',
+    phone: '(21) 99812-3456',
+    crmv: '22415',
+    crmv_uf: 'RJ',
+    crmv_validated: true,
+    specialty: 'Dermatologia Veterinária',
+    clinic_name: 'Clínica Amigo Fiel',
+    role: 'veterinario',
+    status: 'active',
+    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
 const TUTORS_LOCAL_KEY = 'vetpro_tutors_real_list';
 const VETS_LOCAL_KEY = 'vetpro_vets_real_list';
 
 // --- TUTORES ---
 export function getLocalTutors(): TutorRecord[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === 'undefined') return DEFAULT_TUTORS;
   try {
     const raw = localStorage.getItem(TUTORS_LOCAL_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) {
+      localStorage.setItem(TUTORS_LOCAL_KEY, JSON.stringify(DEFAULT_TUTORS));
+      return DEFAULT_TUTORS;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    return DEFAULT_TUTORS;
   } catch {
-    return [];
+    return DEFAULT_TUTORS;
   }
 }
 
@@ -58,17 +181,18 @@ export function saveLocalTutors(tutors: TutorRecord[]): void {
 }
 
 export async function getTutors(): Promise<TutorRecord[]> {
+  const localTutors = getLocalTutors();
   try {
     const supabase = getSupabaseClient();
     if (isSupabaseConfigured()) {
       const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('role', 'tutor')
+        .or('role.eq.tutor,role.is.null,role.eq.user')
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        const mapped: TutorRecord[] = data.map((d: any) => ({
+      if (!error && data && data.length > 0) {
+        const dbMapped: TutorRecord[] = data.map((d: any) => ({
           id: d.id,
           name: d.full_name || d.name || 'Tutor',
           email: d.email || '',
@@ -76,7 +200,7 @@ export async function getTutors(): Promise<TutorRecord[]> {
           cpf: d.cpf || d.cpf_cnpj || '',
           plan_name: d.plan_name || d.plan_selected || 'Essencial',
           plan_id: d.plan_id || (d.plan_name?.toLowerCase().includes('especialista') ? 'especialista' : 'essencial'),
-          subscription_status: d.subscription_status || 'PENDING_PAYMENT',
+          subscription_status: d.subscription_status || 'ACTIVE',
           asaas_customer_id: d.asaas_customer_id || '',
           asaas_subscription_id: d.subscription_id || d.asaas_subscription_id || '',
           status: d.status || 'active',
@@ -84,20 +208,25 @@ export async function getTutors(): Promise<TutorRecord[]> {
           created_at: d.created_at || new Date().toISOString(),
           updated_at: d.updated_at || new Date().toISOString(),
         }));
-        saveLocalTutors(mapped);
-        return mapped;
+
+        const mergedMap = new Map<string, TutorRecord>();
+        localTutors.forEach(t => mergedMap.set(t.id, t));
+        dbMapped.forEach(t => mergedMap.set(t.id, { ...mergedMap.get(t.id), ...t }));
+        const finalTutors = Array.from(mergedMap.values());
+        saveLocalTutors(finalTutors);
+        return finalTutors;
       }
     }
   } catch (e) {
     console.warn('Erro ao carregar tutores do Supabase:', e);
   }
-  return getLocalTutors();
+  return localTutors;
 }
 
 export async function saveTutor(tutor: Partial<TutorRecord> & { name: string; email: string }): Promise<{ success: boolean; data?: TutorRecord; error?: string }> {
   try {
     const now = new Date().toISOString();
-    const finalId = isValidUUID(tutor.id) ? tutor.id! : generateUUID();
+    const finalId = isValidUUID(tutor.id) ? tutor.id! : (tutor.id || generateUUID());
     const tutorToSave: TutorRecord = {
       id: finalId,
       name: tutor.name.trim(),
@@ -106,7 +235,7 @@ export async function saveTutor(tutor: Partial<TutorRecord> & { name: string; em
       cpf: tutor.cpf || '',
       plan_name: tutor.plan_name || 'Essencial',
       plan_id: tutor.plan_id || (tutor.plan_name?.toLowerCase().includes('especialista') ? 'especialista' : 'essencial'),
-      subscription_status: tutor.subscription_status || 'PENDING_PAYMENT',
+      subscription_status: tutor.subscription_status || 'ACTIVE',
       asaas_customer_id: tutor.asaas_customer_id || '',
       asaas_subscription_id: tutor.asaas_subscription_id || '',
       status: tutor.status || 'active',
@@ -139,7 +268,7 @@ export async function saveTutor(tutor: Partial<TutorRecord> & { name: string; em
       }
     }
 
-    const current = getLocalTutors().filter(t => t.id !== tutorToSave.id);
+    const current = getLocalTutors().filter(t => t.id !== tutorToSave.id && t.email !== tutorToSave.email);
     saveLocalTutors([tutorToSave, ...current]);
     return { success: true, data: tutorToSave };
   } catch (err: any) {
@@ -173,12 +302,20 @@ export async function deleteTutor(tutorId: string, tutorName?: string): Promise<
 
 // --- VETERINÁRIOS ---
 export function getLocalVets(): VetRecord[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === 'undefined') return DEFAULT_VETS;
   try {
     const raw = localStorage.getItem(VETS_LOCAL_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) {
+      localStorage.setItem(VETS_LOCAL_KEY, JSON.stringify(DEFAULT_VETS));
+      return DEFAULT_VETS;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    return DEFAULT_VETS;
   } catch {
-    return [];
+    return DEFAULT_VETS;
   }
 }
 
@@ -192,6 +329,7 @@ export function saveLocalVets(vets: VetRecord[]): void {
 }
 
 export async function getVets(): Promise<VetRecord[]> {
+  const localVets = getLocalVets();
   try {
     const supabase = getSupabaseClient();
     if (isSupabaseConfigured()) {
@@ -201,8 +339,8 @@ export async function getVets(): Promise<VetRecord[]> {
         .in('role', ['veterinario', 'admin', 'super_admin'])
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        const mapped: VetRecord[] = data.map((d: any) => ({
+      if (!error && data && data.length > 0) {
+        const dbMapped: VetRecord[] = data.map((d: any) => ({
           id: d.id,
           name: d.full_name || d.name || 'Veterinário',
           email: d.email || '',
@@ -217,20 +355,25 @@ export async function getVets(): Promise<VetRecord[]> {
           created_at: d.created_at || new Date().toISOString(),
           updated_at: d.updated_at || new Date().toISOString(),
         }));
-        saveLocalVets(mapped);
-        return mapped;
+
+        const mergedMap = new Map<string, VetRecord>();
+        localVets.forEach(v => mergedMap.set(v.id, v));
+        dbMapped.forEach(v => mergedMap.set(v.id, { ...mergedMap.get(v.id), ...v }));
+        const finalVets = Array.from(mergedMap.values());
+        saveLocalVets(finalVets);
+        return finalVets;
       }
     }
   } catch (e) {
     console.warn('Erro ao carregar veterinários do Supabase:', e);
   }
-  return getLocalVets();
+  return localVets;
 }
 
 export async function saveVet(vet: Partial<VetRecord> & { name: string; email: string; crmv: string }): Promise<{ success: boolean; data?: VetRecord; error?: string }> {
   try {
     const now = new Date().toISOString();
-    const finalId = isValidUUID(vet.id) ? vet.id! : generateUUID();
+    const finalId = isValidUUID(vet.id) ? vet.id! : (vet.id || generateUUID());
     const vetToSave: VetRecord = {
       id: finalId,
       name: vet.name.trim(),
@@ -269,7 +412,7 @@ export async function saveVet(vet: Partial<VetRecord> & { name: string; email: s
       }
     }
 
-    const current = getLocalVets().filter(v => v.id !== vetToSave.id);
+    const current = getLocalVets().filter(v => v.id !== vetToSave.id && v.email !== vetToSave.email);
     saveLocalVets([vetToSave, ...current]);
     return { success: true, data: vetToSave };
   } catch (err: any) {
@@ -299,4 +442,10 @@ export async function deleteVet(vetId: string, vetName?: string): Promise<{ succ
   } catch (err: any) {
     return { success: false, error: err?.message || 'Erro ao excluir veterinário' };
   }
+}
+
+export function resetDefaultCadastros(): { tutors: TutorRecord[]; vets: VetRecord[] } {
+  saveLocalTutors(DEFAULT_TUTORS);
+  saveLocalVets(DEFAULT_VETS);
+  return { tutors: DEFAULT_TUTORS, vets: DEFAULT_VETS };
 }

@@ -7,8 +7,9 @@ import {
 } from 'lucide-react';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
+import { getLocalTutors, getLocalVets } from '@/lib/cadastroService';
 
-export interface SystemUser {
+interface SystemUser {
   id: string;
   name: string;
   email: string;
@@ -25,12 +26,21 @@ export interface SystemUser {
 const DEFAULT_USERS: SystemUser[] = [
   { 
     id: 'usr-1', 
-    name: 'Marcelo (Super Admin)', 
+    name: 'Marcelo Oliveira (Super Admin)', 
     email: 'marcelobfo@gmail.com', 
     phone: '(11) 99999-8888',
     role: 'super_admin', 
     status: 'active',
     tenantId: 'tenant-3'
+  },
+  { 
+    id: 'tutor-lavinia-01', 
+    name: 'Lavínia Rocha (Tutor)', 
+    email: 'lavinia.rocha@email.com', 
+    phone: '(11) 98877-6655',
+    role: 'tutor', 
+    status: 'active',
+    tenantId: 'tenant-1'
   },
   { 
     id: 'usr-2', 
@@ -52,17 +62,39 @@ const DEFAULT_USERS: SystemUser[] = [
     phone: '(11) 97777-6666',
     role: 'admin', 
     status: 'active',
-    tenantId: 'tenant-1',
+    tenantId: 'tenant-2',
     crmv: '18204',
     crmvUf: 'SP',
     crmvValidated: true,
-    specialty: 'Diretor Clínico'
+    specialty: 'Cardiologia & Diretor Clínico'
+  },
+  { 
+    id: 'vet-camila-03', 
+    name: 'Dra. Camila Torres', 
+    email: 'camila.torres@amigofiel.vet.br', 
+    phone: '(21) 99812-3456',
+    role: 'veterinario', 
+    status: 'active',
+    tenantId: 'tenant-4',
+    crmv: '22415',
+    crmvUf: 'RJ',
+    crmvValidated: true,
+    specialty: 'Dermatologia Veterinária'
   },
   { 
     id: 'usr-4', 
     name: 'Carlos Eduardo (Tutor)', 
     email: 'carlos.t@gmail.com', 
     phone: '(11) 91234-5678',
+    role: 'tutor', 
+    status: 'active',
+    tenantId: 'tenant-1'
+  },
+  { 
+    id: 'tutor-mariana-04', 
+    name: 'Mariana Silva (Tutor)', 
+    email: 'mariana.silva@petlover.com', 
+    phone: '(11) 97654-3210',
     role: 'tutor', 
     status: 'active',
     tenantId: 'tenant-1'
@@ -107,9 +139,61 @@ export default function UsuariosPage() {
   const loadUsers = async () => {
     setLoading(true);
     try {
+      let currentUsers: SystemUser[] = DEFAULT_USERS;
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('vetpro_users_list') : null;
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            currentUsers = parsed;
+          }
+        } catch {
+          currentUsers = DEFAULT_USERS;
+        }
+      }
+
+      // Mescla com os cadastros de tutores e veterinários para sincronia perfeita
+      const localTutors = getLocalTutors();
+      const localVets = getLocalVets();
+      const userMap = new Map<string, SystemUser>();
+      currentUsers.forEach(u => userMap.set(u.id, u));
+
+      localTutors.forEach(t => {
+        if (!userMap.has(t.id)) {
+          userMap.set(t.id, {
+            id: t.id,
+            name: `${t.name} (Tutor)`,
+            email: t.email,
+            phone: t.phone,
+            role: 'tutor',
+            status: t.status,
+            tenantId: 'tenant-1'
+          });
+        }
+      });
+
+      localVets.forEach(v => {
+        if (!userMap.has(v.id)) {
+          userMap.set(v.id, {
+            id: v.id,
+            name: v.name,
+            email: v.email,
+            phone: v.phone,
+            role: v.role,
+            status: v.status,
+            crmv: v.crmv,
+            crmvUf: v.crmv_uf,
+            crmvValidated: v.crmv_validated,
+            specialty: v.specialty,
+            tenantId: 'tenant-1'
+          });
+        }
+      });
+
+      let mergedList = Array.from(userMap.values());
+
       const supabase = getSupabaseClient();
       if (isSupabaseConfigured()) {
-        // Carrega tenants
         const { data: tData } = await supabase.from('tenants').select('id, name').order('name');
         if (tData && tData.length > 0) {
           setTenants(tData);
@@ -120,12 +204,8 @@ export default function UsuariosPage() {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (error) {
-          console.warn('Erro ao buscar do Supabase, usando dados locais:', error.message);
-          const saved = localStorage.getItem('vetpro_users_list');
-          if (saved) setUsers(JSON.parse(saved));
-        } else if (data && data.length > 0) {
-          const mapped: SystemUser[] = data.map((d: any) => ({
+        if (!error && data && data.length > 0) {
+          const dbMapped: SystemUser[] = data.map((d: any) => ({
             id: d.id,
             name: d.full_name || d.name || 'Sem nome',
             email: d.email || '',
@@ -138,19 +218,18 @@ export default function UsuariosPage() {
             crmvValidated: d.crmv_validated,
             specialty: d.specialty
           }));
-          setUsers(mapped);
-          localStorage.setItem('vetpro_users_list', JSON.stringify(mapped));
-        } else {
-          // Se Supabase vazio, salvar padrão
-          const saved = localStorage.getItem('vetpro_users_list');
-          if (saved) setUsers(JSON.parse(saved));
+
+          dbMapped.forEach(dbU => userMap.set(dbU.id, { ...userMap.get(dbU.id), ...dbU }));
+          mergedList = Array.from(userMap.values());
         }
-      } else {
-        const saved = localStorage.getItem('vetpro_users_list');
-        if (saved) setUsers(JSON.parse(saved));
+      }
+
+      setUsers(mergedList);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vetpro_users_list', JSON.stringify(mergedList));
       }
     } catch (err: any) {
-      console.error(err);
+      console.error('Erro ao carregar usuários:', err);
     } finally {
       setLoading(false);
     }
@@ -488,20 +567,21 @@ export default function UsuariosPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button 
                           onClick={() => handleOpenEditModal(user)}
-                          className="p-2 text-brand-text-muted hover:text-brand-text hover:bg-brand-surface-2 rounded-lg transition-colors"
+                          className="px-2.5 py-1.5 rounded-lg bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text hover:text-brand-teal text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                           title="Editar Usuário"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Edit2 className="w-3.5 h-3.5 text-brand-teal" />
+                          <span>Editar</span>
                         </button>
                         <button 
                           onClick={() => handleDeleteUser(user.id, user.name)}
-                          className="p-2 text-brand-danger hover:bg-brand-danger/10 rounded-lg transition-colors"
+                          className="p-1.5 text-brand-danger hover:bg-brand-danger/10 border border-transparent hover:border-brand-danger/20 rounded-lg transition-colors"
                           title="Excluir Usuário"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>

@@ -956,10 +956,11 @@ export default function CentralCadastrosPage() {
                               </button>
                               <button
                                 onClick={() => handleOpenTutorModal(tutor)}
-                                className="p-1.5 rounded-lg bg-brand-surface-2 border border-brand-border-strong text-brand-text-muted hover:text-brand-teal hover:border-brand-teal transition-colors"
+                                className="px-2.5 py-1.5 rounded-lg bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text hover:text-brand-teal text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                                 title="Editar tutor"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                <Edit2 className="w-3.5 h-3.5 text-brand-teal" />
+                                <span>Editar</span>
                               </button>
                               <button
                                 onClick={() => handleDeleteTutor(tutor)}
@@ -1043,10 +1044,11 @@ export default function CentralCadastrosPage() {
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => handleOpenVetModal(vet)}
-                              className="p-1.5 rounded-lg bg-brand-surface-2 border border-brand-border-strong text-brand-text-muted hover:text-brand-teal hover:border-brand-teal transition-colors"
+                              className="px-2.5 py-1.5 rounded-lg bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text hover:text-brand-teal text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                               title="Editar veterinário"
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              <Edit2 className="w-3.5 h-3.5 text-brand-teal" />
+                              <span>Editar</span>
                             </button>
                             <button
                               onClick={() => handleDeleteVet(vet)}
@@ -1212,10 +1214,11 @@ export default function CentralCadastrosPage() {
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => handleOpenPartnerModal(partner)}
-                                  className="p-1.5 rounded-lg bg-brand-surface-2 border border-brand-border-strong text-brand-text-muted hover:text-brand-teal hover:border-brand-teal transition-colors"
+                                  className="px-2.5 py-1.5 rounded-lg bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text hover:text-brand-teal text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                                   title="Editar parceiro (Super Admin)"
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <Edit2 className="w-3.5 h-3.5 text-brand-teal" />
+                                  <span>Editar</span>
                                 </button>
                                 <button
                                   onClick={() => handleDeletePartner(partner)}

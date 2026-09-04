@@ -39,6 +39,99 @@ export const PARTNER_CATEGORIES: { id: Partner['category']; label: string; iconN
   { id: 'hotel_pet', label: 'Hotel & Creche Pet', iconName: 'Home' },
 ];
 
+export const DEFAULT_PARTNERS: Partner[] = [
+  {
+    id: 'partner-petcare-24h',
+    name: 'Hospital Veterinário PetCare 24h',
+    category: 'hospital_24h',
+    description: 'Pronto-socorro 24 horas, UTI veterinária, internação e exames laboratoriais de emergência.',
+    phone: '(11) 3888-0000',
+    whatsapp: '11988880000',
+    email: 'emergencia@petcare24h.com.br',
+    website: 'https://petcare24h.com.br',
+    address: 'Av. Brigadeiro Luís Antônio, 2800',
+    neighborhood: 'Jardins',
+    city: 'São Paulo',
+    state: 'SP',
+    latitude: -23.5714,
+    longitude: -46.6548,
+    is_featured: true,
+    banner_badge: 'Plantão 24 Horas',
+    promo_text: '15% de desconto no atendimento de urgência para membros VetPro',
+    rating: 4.9,
+    status: 'active',
+    created_at: new Date(Date.now() - 86400000 * 90).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'partner-cao-elegante',
+    name: 'Pet Shop & Estética Cão Elegante',
+    category: 'banho_tosa',
+    description: 'Banho com ozonioterapia, tosa na tesoura, hidratação premium e spa pet relaxante.',
+    phone: '(11) 3055-1234',
+    whatsapp: '11995551234',
+    email: 'contato@caoelegante.com.br',
+    address: 'Rua Augusta, 1950',
+    neighborhood: 'Cerqueira César',
+    city: 'São Paulo',
+    state: 'SP',
+    latitude: -23.5583,
+    longitude: -46.6631,
+    is_featured: true,
+    banner_badge: 'Desconto Exclusivo',
+    promo_text: 'Ganhe hidratação grátis no primeiro banho agendado pelo app',
+    rating: 4.8,
+    status: 'active',
+    created_at: new Date(Date.now() - 86400000 * 45).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'partner-drogavet',
+    name: 'Drogavet Farmácia Veterinária',
+    category: 'farmacia',
+    description: 'Medicamentos manipulados sob medida em biscoitos saborizados, pastas e suspensões.',
+    phone: '(11) 3214-5500',
+    whatsapp: '11982145500',
+    email: 'atendimento@drogavet.com.br',
+    website: 'https://drogavet.com.br',
+    address: 'Rua Oscar Freire, 800',
+    neighborhood: 'Pinheiros',
+    city: 'São Paulo',
+    state: 'SP',
+    latitude: -23.5620,
+    longitude: -46.6710,
+    is_featured: true,
+    banner_badge: 'Parceiro Oficial',
+    promo_text: '10% OFF em todas as fórmulas manipuladas para assinantes VetPro',
+    rating: 5.0,
+    status: 'active',
+    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'partner-sao-francisco',
+    name: 'Clínica Veterinária São Francisco',
+    category: 'clinica',
+    description: 'Consultas especializadas, vacinas importadas, ultrassom e cirurgias com anestesia inalatória.',
+    phone: '(11) 3100-2200',
+    whatsapp: '11971002200',
+    email: 'contato@saovet.com.br',
+    address: 'Rua Domingos de Morais, 1200',
+    neighborhood: 'Vila Mariana',
+    city: 'São Paulo',
+    state: 'SP',
+    latitude: -23.5872,
+    longitude: -46.6385,
+    is_featured: true,
+    banner_badge: 'Rede Credenciada',
+    promo_text: 'Avaliação odontológica preventiva cortesia na consulta de rotina',
+    rating: 4.9,
+    status: 'active',
+    created_at: new Date(Date.now() - 86400000 * 60).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
 const LOCAL_STORAGE_KEY = 'vetpro_partners_list';
 
 // Haversine formula para cálculo preciso de distância em quilômetros
@@ -59,13 +152,20 @@ export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lo
 
 // Obter parceiros salvos localmente
 export function getLocalPartners(): Partner[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === 'undefined') return DEFAULT_PARTNERS;
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
+    if (!raw) {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(DEFAULT_PARTNERS));
+      return DEFAULT_PARTNERS;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    return DEFAULT_PARTNERS;
   } catch {
-    return [];
+    return DEFAULT_PARTNERS;
   }
 }
 
@@ -81,6 +181,7 @@ export function saveLocalPartners(partners: Partner[]): void {
 
 // Listar todos os parceiros com sincronização Supabase
 export async function getPartners(): Promise<Partner[]> {
+  const localPartners = getLocalPartners();
   try {
     const supabase = getSupabaseClient();
     if (isSupabaseConfigured()) {
@@ -90,15 +191,24 @@ export async function getPartners(): Promise<Partner[]> {
         .order('created_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
-        saveLocalPartners(data as Partner[]);
-        return data as Partner[];
+        const mergedMap = new Map<string, Partner>();
+        localPartners.forEach(p => mergedMap.set(p.id, p));
+        (data as Partner[]).forEach(p => mergedMap.set(p.id, { ...mergedMap.get(p.id), ...p }));
+        const finalPartners = Array.from(mergedMap.values());
+        saveLocalPartners(finalPartners);
+        return finalPartners;
       }
     }
   } catch (err) {
     console.warn('Falha ao buscar parceiros do Supabase, carregando local:', err);
   }
 
-  return getLocalPartners();
+  return localPartners;
+}
+
+export function resetDefaultPartners(): Partner[] {
+  saveLocalPartners(DEFAULT_PARTNERS);
+  return DEFAULT_PARTNERS;
 }
 
 // Listar apenas parceiros ativos para exibição pública / tutor
