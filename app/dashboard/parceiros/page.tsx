@@ -4,23 +4,31 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { 
   Building, MapPin, Phone, MessageCircle, Navigation, Search, 
-  Filter, Star, Sparkles, HeartPulse, Stethoscope, ShoppingBag, 
-  Pill, Award, Home, ExternalLink, RefreshCw, AlertCircle,
-  ShieldCheck, CheckCircle2, ChevronRight, Info, Settings, Clock, Globe,
-  Map, Compass, Check, AlertTriangle, UserCheck, Heart
+  Star, Sparkles, HeartPulse, Stethoscope, ShoppingBag, 
+  Pill, Award, Home, RefreshCw,
+  CheckCircle2, Info, Settings, Heart
 } from 'lucide-react';
 import { 
   Partner, 
   PARTNER_CATEGORIES, 
   getActivePartners,
   getFavoritePartnerIds,
-  isPartnerFavorite,
   toggleFavoritePartner
 } from '@/lib/partnerService';
 import { useGeolocation } from '@/lib/useGeolocation';
 import { PartnerRotativeAds } from '@/components/PartnerRotativeAds';
 import { isModuleActive, SYSTEM_MODULE_KEYS } from '@/lib/moduleService';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+
+const POPULAR_CITIES = [
+  { city: 'Montes Claros', state: 'MG' },
+  { city: 'Belo Horizonte', state: 'MG' },
+  { city: 'São Paulo', state: 'SP' },
+  { city: 'Rio de Janeiro', state: 'RJ' },
+  { city: 'Brasília', state: 'DF' },
+  { city: 'Curitiba', state: 'PR' },
+  { city: 'Salvador', state: 'BA' },
+];
 
 export default function ParceirosPage() {
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -37,15 +45,13 @@ export default function ParceirosPage() {
 
   // Perfil e requisitos de endereço do tutor
   const [userAddress, setUserAddress] = useState<string>('');
-  const [userCity, setUserCity] = useState<string>('');
-  const [userState, setUserState] = useState<string>('SP');
+  const [userCity, setUserCity] = useState<string>('Montes Claros');
+  const [userState, setUserState] = useState<string>('MG');
   const [userCep, setUserCep] = useState<string>('');
-  const [isAddressSaved, setIsAddressSaved] = useState<boolean>(false);
-  const [addressLoading, setAddressLoading] = useState<boolean>(true);
   const [isSavingAddress, setIsSavingAddress] = useState<boolean>(false);
   const [showAddressForm, setShowAddressForm] = useState<boolean>(false);
 
-  const [userRole, setUserRole] = useState<'tutor' | 'admin' | 'super_admin'>(() => {
+  const [userRole] = useState<'tutor' | 'admin' | 'super_admin'>(() => {
     if (typeof window !== 'undefined') {
       const storedRole = localStorage.getItem('vetpro_user_role') as 'tutor' | 'admin' | 'super_admin' | null;
       if (storedRole) return storedRole;
@@ -53,20 +59,21 @@ export default function ParceirosPage() {
     return 'tutor';
   });
 
-  const [isModuleEnabled, setIsModuleEnabled] = useState<boolean>(() => {
-    return isModuleActive(SYSTEM_MODULE_KEYS.PARCEIROS_GPS);
-  });
-  
-  const { location, loading: geoLoading, gpsLoading, ipLoading, error: geoError, requestLocation, detectLocationByIp } = useGeolocation();
+  const { 
+    location, 
+    loading: geoLoading, 
+    requestLocation, 
+    setManualLocation 
+  } = useGeolocation();
 
   const showToast = (text: string, type: 'success' | 'info' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Cidade e estado efetivos (do perfil salvo ou detectados automaticamente pelo IP/GPS)
-  const effectiveCity = userCity || location?.city || '';
-  const effectiveState = userState || location?.state || 'SP';
+  // Cidade e estado efetivos
+  const effectiveCity = userCity || location?.city || 'Montes Claros';
+  const effectiveState = userState || location?.state || 'MG';
 
   // Escuta mudanças de favoritos
   useEffect(() => {
@@ -86,7 +93,7 @@ export default function ParceirosPage() {
     }
   };
 
-  // Carrega dados de endereço do perfil do tutor
+  // Carrega dados de endereço salvos
   useEffect(() => {
     async function loadUserProfile() {
       try {
@@ -98,12 +105,11 @@ export default function ParceirosPage() {
           const savedState = localStorage.getItem('vetpro_user_state') || '';
           const savedCep = localStorage.getItem('vetpro_user_cep') || '';
 
-          if (savedStreet || savedCity) {
+          if (savedCity) {
             setUserAddress(savedStreet);
-            setUserCity(savedCity || '');
-            setUserState(savedState || 'SP');
+            setUserCity(savedCity);
+            setUserState(savedState || 'MG');
             setUserCep(savedCep);
-            setIsAddressSaved(true);
           }
         }
 
@@ -111,55 +117,37 @@ export default function ParceirosPage() {
           const supabase = getSupabaseClient();
           const { data } = await supabase
             .from('user_profiles')
-            .select('street, city, state, cep, neighborhood')
+            .select('street, city, state, cep')
             .eq('email', email.toLowerCase().trim())
             .maybeSingle();
 
-          if (data && (data.street || data.city)) {
+          if (data && data.city) {
             setUserAddress(data.street || '');
-            setUserCity(data.city || '');
-            setUserState(data.state || 'SP');
+            setUserCity(data.city);
+            setUserState(data.state || 'MG');
             setUserCep(data.cep || '');
-            setIsAddressSaved(true);
           }
         }
       } catch (err) {
         console.warn('Erro ao carregar perfil de endereço:', err);
-      } finally {
-        setAddressLoading(false);
       }
     }
 
     loadUserProfile();
   }, []);
 
-  // Monitora mudanças nos módulos
-  useEffect(() => {
-    const handleModuleChange = () => {
-      setIsModuleEnabled(isModuleActive(SYSTEM_MODULE_KEYS.PARCEIROS_GPS));
-    };
-    window.addEventListener('vetpro_modules_changed', handleModuleChange);
-    return () => window.removeEventListener('vetpro_modules_changed', handleModuleChange);
-  }, []);
-
-  // O tutor pode navegar se tiver endereço ou GPS ativo (ou admin/super_admin)
-  const isRequirementsMet = useMemo(() => {
-    if (userRole === 'admin' || userRole === 'super_admin') return true;
-    const hasAddress = Boolean(userAddress && userAddress.trim().length > 3) || Boolean(effectiveCity && effectiveCity.trim().length > 2);
-    const hasGeo = Boolean(location && location.latitude && location.longitude);
-    return hasAddress || hasGeo;
-  }, [userRole, userAddress, effectiveCity, location]);
-
   // Carrega estabelecimentos reais na região
   const fetchPartnersData = useCallback(async () => {
     setLoading(true);
-    const coords = location ? { latitude: location.latitude, longitude: location.longitude } : null;
+    const coords = location && location.latitude && location.longitude
+      ? { latitude: location.latitude, longitude: location.longitude }
+      : null;
 
     try {
       const data = await getActivePartners(coords, {
         address: userAddress,
-        city: effectiveCity || '',
-        state: effectiveState || 'SP',
+        city: effectiveCity,
+        state: effectiveState,
         includeGooglePlaces: true,
       });
 
@@ -184,7 +172,15 @@ export default function ParceirosPage() {
     };
   }, [fetchPartnersData]);
 
-  // Salva endereço rápido no perfil do tutor via API Server Route segura
+  // Troca rápida de cidade
+  const handleSelectQuickCity = (city: string, state: string) => {
+    setUserCity(city);
+    setUserState(state);
+    setManualLocation(city, state);
+    showToast(`Buscando estabelecimentos em ${city} - ${state}...`, 'info');
+  };
+
+  // Salva endereço no perfil do tutor
   const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userCity.trim()) {
@@ -200,6 +196,8 @@ export default function ParceirosPage() {
         localStorage.setItem('vetpro_user_state', userState.trim().toUpperCase());
         localStorage.setItem('vetpro_user_cep', userCep.trim());
       }
+
+      setManualLocation(userCity.trim(), userState.trim().toUpperCase());
 
       const email = typeof window !== 'undefined' ? localStorage.getItem('vetpro_user_email') : '';
       const customUrl = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_url') || '' : '';
@@ -223,7 +221,6 @@ export default function ParceirosPage() {
         });
       }
 
-      setIsAddressSaved(true);
       setShowAddressForm(false);
       showToast('Endereço salvo com sucesso! Atualizando estabelecimentos da região...');
       fetchPartnersData();
@@ -330,7 +327,7 @@ export default function ParceirosPage() {
               Guia de Estabelecimentos & Parceiros
             </h1>
             <p className="text-brand-text-muted text-xs sm:text-sm mt-1 leading-relaxed">
-              Encontre hospitais 24h, clínicas veterinárias, pet shops e farmácias reais na sua cidade ou endereço com rota no Google Maps.
+              Encontre hospitais 24h, clínicas veterinárias, pet shops e farmácias reais na sua cidade com rota e navegação instantânea.
             </p>
           </div>
 
@@ -348,7 +345,7 @@ export default function ParceirosPage() {
             <button
               onClick={() => {
                 requestLocation();
-                showToast('Solicitando localização GPS de alta precisão ao navegador...');
+                showToast('Solicitando localização GPS ao seu dispositivo...');
               }}
               disabled={geoLoading}
               className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 ${
@@ -360,43 +357,39 @@ export default function ParceirosPage() {
               <Navigation className={`w-3.5 h-3.5 ${geoLoading ? 'animate-spin' : ''}`} />
               <span>
                 {location?.source === 'gps' 
-                  ? 'GPS Conectado (Alta Precisão)' 
-                  : location?.source === 'ip'
-                  ? 'Localizado por IP • Usar GPS'
-                  : 'Ativar Localização GPS'}
+                  ? 'GPS Ativo (Alta Precisão)' 
+                  : 'Ativar Meu GPS'}
               </span>
             </button>
           </div>
         </div>
 
         {/* Card de Configuração de Região / Endereço do Tutor */}
-        <div className="bg-brand-surface-2 border border-brand-border-strong rounded-3xl p-5 sm:p-6 shadow-sm">
+        <div className="bg-brand-surface-2 border border-brand-border-strong rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-brand-teal/15 text-brand-teal flex items-center justify-center shrink-0">
                 <MapPin className="w-5 h-5" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-bold text-sm sm:text-base text-brand-text flex items-center gap-2">
-                    Região de Busca: <span className="text-brand-teal">{effectiveCity ? `${effectiveCity}, ${effectiveState}` : 'Detectando...'}</span>
+                    Região Atual: <span className="text-brand-teal font-extrabold">{effectiveCity}, {effectiveState}</span>
                   </h3>
                   {location?.source === 'gps' ? (
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> GPS Ativo
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> GPS Conectado
                     </span>
-                  ) : location?.source === 'ip' ? (
+                  ) : (
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-teal/15 text-brand-teal border border-brand-teal/30 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-brand-teal"></span> IP da Conexão
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-teal"></span> Cidade Selecionada
                     </span>
-                  ) : null}
+                  )}
                 </div>
                 <p className="text-xs text-brand-text-muted mt-0.5">
                   {userAddress 
                     ? `${userAddress} ${userCep ? `(CEP: ${userCep})` : ''}` 
-                    : location?.city 
-                    ? `Localizado em ${location.city}/${location.state}. Você pode refinar seu endereço exato abaixo.`
-                    : 'Preencha seu endereço ou cidade para encontrar os estabelecimentos mais próximos de você.'}
+                    : `Mostrando estabelecimentos veterinários reais cadastrados em ${effectiveCity} e região.`}
                 </p>
               </div>
             </div>
@@ -406,16 +399,38 @@ export default function ParceirosPage() {
               className="px-3.5 py-2 rounded-xl bg-brand-surface border border-brand-border-strong hover:border-brand-teal/40 text-brand-text font-semibold text-xs transition-all shrink-0 flex items-center gap-1.5"
             >
               <MapPin className="w-3.5 h-3.5 text-brand-teal" />
-              <span>{showAddressForm ? 'Fechar Edição' : 'Alterar Região / Endereço'}</span>
+              <span>{showAddressForm ? 'Fechar Edição' : 'Trocar Cidade / Endereço'}</span>
             </button>
           </div>
 
-          {/* Formulário Rápido de Endereço */}
+          {/* Atalhos Rápidos de Cidades */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+            <span className="text-[11px] font-semibold text-brand-text-muted shrink-0 mr-1">Cidades Rápidas:</span>
+            {POPULAR_CITIES.map((c) => {
+              const isSelected = effectiveCity.toLowerCase() === c.city.toLowerCase();
+              return (
+                <button
+                  key={`${c.city}-${c.state}`}
+                  onClick={() => handleSelectQuickCity(c.city, c.state)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 shrink-0 ${
+                    isSelected
+                      ? 'bg-brand-teal text-brand-bg shadow-xs font-bold'
+                      : 'bg-brand-surface text-brand-text-muted hover:text-brand-text border border-brand-border-strong hover:border-brand-teal/40'
+                  }`}
+                >
+                  <MapPin className="w-3 h-3" />
+                  <span>{c.city} ({c.state})</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Formulário de Endereço Completo */}
           {showAddressForm && (
-            <form onSubmit={handleSaveAddress} className="mt-5 pt-5 border-t border-brand-border-strong space-y-4">
+            <form onSubmit={handleSaveAddress} className="pt-4 border-t border-brand-border-strong space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">CEP</label>
+                  <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">CEP (opcional)</label>
                   <input
                     type="text"
                     placeholder="00000-000"
@@ -429,10 +444,10 @@ export default function ParceirosPage() {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">Logradouro / Bairro</label>
+                  <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">Rua / Bairro</label>
                   <input
                     type="text"
-                    placeholder="Ex: Av. Paulista, 1000 - Bela Vista"
+                    placeholder="Ex: Centro ou Av. Principal"
                     value={userAddress}
                     onChange={(e) => setUserAddress(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-brand-surface border border-brand-border-strong text-brand-text text-xs focus:outline-none focus:border-brand-teal"
@@ -445,7 +460,7 @@ export default function ParceirosPage() {
                     <input
                       type="text"
                       required
-                      placeholder="Ex: São Paulo"
+                      placeholder="Ex: Montes Claros"
                       value={userCity}
                       onChange={(e) => setUserCity(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-brand-surface border border-brand-border-strong text-brand-text text-xs focus:outline-none focus:border-brand-teal"
@@ -458,7 +473,7 @@ export default function ParceirosPage() {
                       type="text"
                       required
                       maxLength={2}
-                      placeholder="SP"
+                      placeholder="MG"
                       value={userState}
                       onChange={(e) => setUserState(e.target.value.toUpperCase())}
                       className="w-full px-3 py-2 rounded-xl bg-brand-surface border border-brand-border-strong text-brand-text text-xs focus:outline-none focus:border-brand-teal uppercase"
@@ -480,7 +495,7 @@ export default function ParceirosPage() {
                   disabled={isSavingAddress}
                   className="py-2 px-5 rounded-xl bg-brand-teal hover:bg-brand-teal/90 text-brand-bg font-bold text-xs transition-all shadow-xs disabled:opacity-50"
                 >
-                  {isSavingAddress ? 'Salvando...' : 'Buscar Estabelecimentos Nesta Região'}
+                  {isSavingAddress ? 'Salvando...' : 'Atualizar e Buscar Estabelecimentos'}
                 </button>
               </div>
             </form>
@@ -503,7 +518,7 @@ export default function ParceirosPage() {
               <Search className="w-4 h-4 text-brand-text-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Buscar por nome do hospital, clínica, pet shop, bairro ou serviço..."
+                placeholder="Buscar por nome do hospital, clínica, pet shop ou serviço..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-brand-surface border border-brand-border-strong text-brand-text placeholder-brand-text-muted text-xs sm:text-sm focus:outline-none focus:border-brand-teal transition-all"
@@ -550,29 +565,23 @@ export default function ParceirosPage() {
                   : 'bg-brand-surface text-brand-text-muted hover:text-rose-400 border border-brand-border-strong'
               }`}
             >
-              <Heart className={`w-3.5 h-3.5 ${showFavoritesOnly ? 'fill-white' : ''}`} />
-              <span>Meus Favoritos</span>
-              {favorites.length > 0 && (
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${showFavoritesOnly ? 'bg-black/20' : 'bg-rose-500/15 text-rose-400'}`}>
-                  {favorites.length}
-                </span>
-              )}
+              <Heart className={`w-3.5 h-3.5 ${showFavoritesOnly ? 'fill-current' : ''}`} />
+              <span>Favoritos ({favorites.length})</span>
             </button>
 
             {/* Pílula: Todos */}
             <button
               onClick={() => {
-                setShowFavoritesOnly(false);
                 setSelectedCategory('all');
+                setShowFavoritesOnly(false);
               }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
-                !showFavoritesOnly && selectedCategory === 'all'
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
+                selectedCategory === 'all' && !showFavoritesOnly
                   ? 'bg-brand-teal text-brand-bg shadow-xs'
                   : 'bg-brand-surface text-brand-text-muted hover:text-brand-text border border-brand-border-strong'
               }`}
             >
-              <Building className="w-3.5 h-3.5" />
-              <span>Todos ({partners.length})</span>
+              Todos ({partners.length})
             </button>
 
             {PARTNER_CATEGORIES.map((cat) => {
@@ -581,18 +590,18 @@ export default function ParceirosPage() {
                 <button
                   key={cat.id}
                   onClick={() => {
-                    setShowFavoritesOnly(false);
                     setSelectedCategory(cat.id);
+                    setShowFavoritesOnly(false);
                   }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 ${
-                    !showFavoritesOnly && selectedCategory === cat.id
+                    selectedCategory === cat.id && !showFavoritesOnly
                       ? 'bg-brand-teal text-brand-bg shadow-xs'
                       : 'bg-brand-surface text-brand-text-muted hover:text-brand-text border border-brand-border-strong'
                   }`}
                 >
                   {getCategoryIcon(cat.id)}
                   <span>{cat.label}</span>
-                  {count > 0 && <span className="text-[10px] opacity-75 font-mono">({count})</span>}
+                  {count > 0 && <span className="opacity-70 text-[10px]">({count})</span>}
                 </button>
               );
             })}
@@ -604,7 +613,7 @@ export default function ParceirosPage() {
           {loading ? (
             <div className="py-20 flex flex-col items-center justify-center text-center">
               <div className="w-8 h-8 border-2 border-brand-teal border-t-transparent rounded-full animate-spin mb-3"></div>
-              <p className="text-sm font-semibold text-brand-text">Buscando estabelecimentos reais na sua região...</p>
+              <p className="text-sm font-semibold text-brand-text">Buscando estabelecimentos em {effectiveCity}...</p>
               <p className="text-xs text-brand-text-muted mt-1">Localizando clínicas veterinárias, pet shops e hospitais 24h</p>
             </div>
           ) : filteredPartners.length === 0 ? (
@@ -615,28 +624,40 @@ export default function ParceirosPage() {
               
               <div className="space-y-1">
                 <h3 className="font-bold text-base text-brand-text">
-                  {showFavoritesOnly ? 'Você ainda não possui estabelecimentos favoritados' : 'Nenhum estabelecimento encontrado nesta área'}
+                  {showFavoritesOnly ? 'Você ainda não possui estabelecimentos favoritados' : `Nenhum estabelecimento listado com os filtros atuais`}
                 </h3>
                 <p className="text-xs text-brand-text-muted max-w-md mx-auto">
                   {showFavoritesOnly
-                    ? 'Clique no ícone de coração nos cards de estabelecimentos para salvar seus hospitais e clínicas preferidas aqui.'
-                    : `Não encontramos cadastros para os filtros selecionados na região de ${userCity || 'busca'}. Você pode alterar a cidade ou buscar ao vivo no Google Maps.`}
+                    ? 'Clique no ícone de coração nos cards para salvar seus hospitais e clínicas preferidas aqui.'
+                    : `Experimente limpar o filtro de distância ou categoria, ou abra a busca completa diretamente no Google Maps para ${effectiveCity}.`}
                 </p>
               </div>
 
-              {!showFavoritesOnly && (
-                <div className="pt-2">
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`clinica veterinaria pet shop hospital 24h ${userCity || ''} ${userState || ''}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-all shadow-xs"
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                {(selectedCategory !== 'all' || maxDistanceKm > 0 || searchTerm) && (
+                  <button
+                    onClick={() => {
+                      setSelectedCategory('all');
+                      setMaxDistanceKm(0);
+                      setSearchTerm('');
+                      setShowFavoritesOnly(false);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-brand-surface border border-brand-border-strong text-brand-text font-bold text-xs hover:border-brand-teal/50 transition-all"
                   >
-                    <Navigation className="w-4 h-4" />
-                    <span>Abrir Busca no Google Maps</span>
-                  </a>
-                </div>
-              )}
+                    Limpar Filtros de Busca
+                  </button>
+                )}
+
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`clinica veterinaria pet shop hospital 24h ${effectiveCity} ${effectiveState}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-all shadow-xs"
+                >
+                  <Navigation className="w-4 h-4" />
+                  <span>Buscar no Google Maps em {effectiveCity}</span>
+                </a>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -683,7 +704,7 @@ export default function ParceirosPage() {
 
                       {/* Header com Logo e Nome */}
                       <div className="flex items-start gap-3 mb-3">
-                        <div className="w-14 h-14 rounded-xl bg-brand-surface-2 border border-brand-border-strong overflow-hidden flex items-center justify-center shrink-0">
+                        <div className="w-12 h-12 rounded-xl bg-brand-surface-2 border border-brand-border-strong overflow-hidden flex items-center justify-center shrink-0">
                           {partner.logo_url ? (
                             /* eslint-disable-next-line @next/next/no-img-element */
                             <img src={partner.logo_url} alt={partner.name} className="w-full h-full object-cover" />
@@ -832,7 +853,7 @@ export default function ParceirosPage() {
                 {selectedPartnerModal.distanceKm !== undefined && (
                   <div className="flex items-center gap-2 text-emerald-400 font-semibold">
                     <Navigation className="w-4 h-4 shrink-0" />
-                    <span>Distância aproximada: {selectedPartnerModal.distanceKm} km do seu endereço</span>
+                    <span>Distância aproximada: {selectedPartnerModal.distanceKm} km da sua localização</span>
                   </div>
                 )}
               </div>
