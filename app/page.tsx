@@ -505,22 +505,52 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Dobra: Rede de Parceiros Credenciados & Anúncios Rotativos */}
+      {/* Dobra: Serviços de Localização e Guia de Parceiros na Área do Tutor */}
       <section id="parceiros" className="py-20 relative overflow-hidden bg-brand-surface/20 border-t border-brand-border-strong">
         <div className="max-w-[1140px] mx-auto px-6">
-          <div className="text-center max-w-[680px] mx-auto mb-12">
+          <div className="text-center max-w-[680px] mx-auto mb-14">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-teal/10 text-brand-teal text-xs font-bold uppercase tracking-wider mb-3">
-              <Navigation className="w-3.5 h-3.5" /> Geolocalização & Guia
+              <Navigation className="w-3.5 h-3.5" /> Geolocalização Integrada
             </div>
             <h2 className="font-display text-[32px] md:text-[38px] font-bold tracking-tight mb-4">
-              Rede de Parceiros & Serviços Mais Próximos
+              Localização Inteligente de Hospitais 24h e Clínicas
             </h2>
             <p className="text-brand-text-muted text-[15px] leading-relaxed">
-              Descubra clínicas 24h, consultórios de especialistas, farmácias veterinárias e pet shops credenciados na sua região com vantagens exclusivas.
+              O sistema localiza em tempo real pelo Google Maps os estabelecimentos de saúde animal mais próximos do seu endereço para você nunca ficar desamparado em momentos de emergência.
             </p>
           </div>
 
-          <PartnerRotativeAds />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-6 rounded-2xl bg-brand-surface/60 border border-brand-border-strong flex flex-col items-start hover:border-brand-primary/40 transition-colors">
+              <div className="w-12 h-12 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center mb-4">
+                <Activity className="w-6 h-6" />
+              </div>
+              <h3 className="font-display font-bold text-lg mb-2">Hospitais & Pronto-Socorro 24h</h3>
+              <p className="text-brand-text-muted text-sm leading-relaxed">
+                Acesso imediato a hospitais com UTI veterinária de plantão aberto agora, rotas rápidas no Google Maps e contato telefônico direto.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-brand-surface/60 border border-brand-border-strong flex flex-col items-start hover:border-brand-primary/40 transition-colors">
+              <div className="w-12 h-12 rounded-xl bg-brand-primary/10 text-brand-primary flex items-center justify-center mb-4">
+                <Stethoscope className="w-6 h-6" />
+              </div>
+              <h3 className="font-display font-bold text-lg mb-2">Clínicas e Especialistas</h3>
+              <p className="text-brand-text-muted text-sm leading-relaxed">
+                Filtre por dermatologia, cardiologia, oftalmologia e cirurgia, visualizando avaliações reais e horários de funcionamento.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-brand-surface/60 border border-brand-border-strong flex flex-col items-start hover:border-brand-primary/40 transition-colors">
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-4">
+                <Building className="w-6 h-6" />
+              </div>
+              <h3 className="font-display font-bold text-lg mb-2">Farmácias & Pet Shops</h3>
+              <p className="text-brand-text-muted text-sm leading-relaxed">
+                Encontre farmácias de manipulação veterinária e pet shops na sua proximidade com rotas e canais diretos de WhatsApp.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -196,12 +196,12 @@ export function PartnerRotativeAds({
         </div>
       ) : (
         /* Card do Parceiro Ativo com Design Premium */
-        <div className="bg-gradient-to-br from-brand-surface-2/95 via-brand-surface-2/70 to-brand-surface/90 border border-brand-border-strong rounded-2xl p-5 sm:p-6 transition-all shadow-sm">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+        <div className="bg-brand-surface-2 border border-brand-border-strong rounded-2xl p-4 sm:p-5 transition-all shadow-sm overflow-hidden">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             
             {/* Foto / Logotipo e Informações */}
-            <div className="lg:col-span-8 flex flex-col sm:flex-row items-start gap-4">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-brand-surface border border-brand-border-strong overflow-hidden flex items-center justify-center flex-shrink-0 shadow-md relative">
+            <div className="flex items-start gap-3.5 min-w-0 flex-1">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-brand-surface border border-brand-border-strong overflow-hidden flex items-center justify-center shrink-0 shadow-sm relative">
                 {currentPartner.logo_url ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img 
@@ -216,43 +216,45 @@ export function PartnerRotativeAds({
                 )}
               </div>
 
-              <div className="space-y-1.5 flex-1 min-w-0">
+              <div className="space-y-1 min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-teal/15 text-brand-teal border border-brand-teal/20 flex items-center gap-1">
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-brand-teal/15 text-brand-teal border border-brand-teal/20 inline-flex items-center gap-1 shrink-0">
                     {getCategoryIcon(currentPartner.category)}
-                    {currentPartner.banner_badge || getCategoryLabel(currentPartner.category)}
+                    <span>{currentPartner.banner_badge || getCategoryLabel(currentPartner.category)}</span>
                   </span>
 
                   {currentPartner.distanceKm !== undefined && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                      <Navigation className="w-3 h-3" /> A {currentPartner.distanceKm} km de você
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1 shrink-0">
+                      <Navigation className="w-3 h-3" />
+                      <span>{currentPartner.distanceKm} km</span>
                     </span>
                   )}
 
                   {currentPartner.rating && (
-                    <span className="text-[11px] font-bold text-amber-400 flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
-                      <Star className="w-3 h-3 fill-amber-400" /> {currentPartner.rating.toFixed(1)}
+                    <span className="text-[10px] font-bold text-amber-400 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 shrink-0">
+                      <Star className="w-3 h-3 fill-amber-400" />
+                      <span>{currentPartner.rating.toFixed(1)}</span>
                     </span>
                   )}
                 </div>
 
-                <h3 className="font-bold text-base sm:text-lg text-brand-text truncate">
+                <h3 className="font-bold text-sm sm:text-base text-brand-text truncate">
                   {currentPartner.name}
                 </h3>
 
                 {currentPartner.promo_text ? (
-                  <div className="text-xs text-brand-teal font-medium flex items-center gap-1.5 bg-brand-teal/10 border border-brand-teal/20 px-3 py-1.5 rounded-xl">
-                    <Sparkles className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
-                    <span className="line-clamp-1">{currentPartner.promo_text}</span>
+                  <div className="text-xs text-brand-teal font-medium flex items-center gap-1.5 bg-brand-teal/10 border border-brand-teal/20 px-2.5 py-1 rounded-lg">
+                    <Sparkles className="w-3 h-3 shrink-0 text-amber-400" />
+                    <span className="truncate">{currentPartner.promo_text}</span>
                   </div>
                 ) : (
-                  <p className="text-xs text-brand-text-muted line-clamp-2 leading-relaxed">
-                    {currentPartner.description || 'Atendimento veterinário especializado, estrutura completa e acolhimento para o seu pet.'}
+                  <p className="text-xs text-brand-text-muted line-clamp-1 leading-relaxed">
+                    {currentPartner.description || 'Atendimento veterinário especializado e acolhimento para o seu pet.'}
                   </p>
                 )}
 
-                <div className="flex items-center gap-1 text-[11px] text-brand-text-muted pt-1">
-                  <MapPin className="w-3.5 h-3.5 text-brand-teal flex-shrink-0" />
+                <div className="flex items-center gap-1 text-[11px] text-brand-text-muted pt-0.5">
+                  <MapPin className="w-3 h-3 text-brand-teal shrink-0" />
                   <span className="truncate">
                     {currentPartner.address}{currentPartner.neighborhood ? `, ${currentPartner.neighborhood}` : ''} • {currentPartner.city}/{currentPartner.state}
                   </span>
@@ -261,16 +263,16 @@ export function PartnerRotativeAds({
             </div>
 
             {/* Ações de Contato Direto para o Tutor */}
-            <div className="lg:col-span-4 flex flex-col gap-2 justify-center">
+            <div className="flex flex-col sm:flex-row md:flex-col gap-2 shrink-0 md:w-48 pt-2 md:pt-0 border-t md:border-t-0 border-brand-border-strong">
               {currentPartner.whatsapp && (
                 <a
                   href={`https://wa.me/55${currentPartner.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá! Encontrei o perfil da ${currentPartner.name} no VetPro Orienta e gostaria de informações.`)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all text-center"
+                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all text-center"
                 >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>Chamar no WhatsApp</span>
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>WhatsApp</span>
                 </a>
               )}
 
@@ -278,20 +280,20 @@ export function PartnerRotativeAds({
                 <button
                   type="button"
                   onClick={() => setSelectedPartnerModal(currentPartner)}
-                  className="px-3 py-2 rounded-xl bg-brand-surface border border-brand-border-strong hover:border-brand-teal/50 text-brand-text text-xs font-semibold flex items-center justify-center gap-1.5 transition-all text-center"
+                  className="px-2.5 py-1.5 rounded-xl bg-brand-surface border border-brand-border-strong hover:border-brand-teal/50 text-brand-text text-xs font-semibold flex items-center justify-center gap-1 transition-all text-center truncate"
                 >
-                  <Info className="w-3.5 h-3.5 text-brand-teal" />
-                  <span>Ver Perfil</span>
+                  <Info className="w-3 h-3 text-brand-teal shrink-0" />
+                  <span className="truncate">Perfil</span>
                 </button>
 
                 <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${currentPartner.name} ${currentPartner.address} ${currentPartner.city} ${currentPartner.state}`)}`}
+                  href={currentPartner.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${currentPartner.name} ${currentPartner.address} ${currentPartner.city} ${currentPartner.state}`)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-xl bg-brand-surface border border-brand-border-strong hover:border-brand-teal/50 text-brand-text text-xs font-semibold flex items-center justify-center gap-1.5 transition-all text-center"
+                  className="px-2.5 py-1.5 rounded-xl bg-brand-surface border border-brand-border-strong hover:border-brand-teal/50 text-brand-text text-xs font-semibold flex items-center justify-center gap-1 transition-all text-center truncate"
                 >
-                  <Navigation className="w-3.5 h-3.5 text-brand-teal" />
-                  <span>Como Chegar</span>
+                  <Navigation className="w-3 h-3 text-brand-teal shrink-0" />
+                  <span className="truncate">Rota</span>
                 </a>
               </div>
             </div>

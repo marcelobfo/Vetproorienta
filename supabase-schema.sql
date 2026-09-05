@@ -389,26 +389,29 @@ ALTER TABLE public.webhook_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Funções Helper para as Políticas de RLS
+DROP FUNCTION IF EXISTS public.current_user_tenant_id() CASCADE;
 CREATE OR REPLACE FUNCTION public.current_user_tenant_id()
 RETURNS UUID AS $$
   SELECT tenant_id FROM public.user_profiles WHERE id = auth.uid();
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
+DROP FUNCTION IF EXISTS public.is_super_admin() CASCADE;
 CREATE OR REPLACE FUNCTION public.is_super_admin()
 RETURNS BOOLEAN AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.user_profiles 
     WHERE id = auth.uid() AND role = 'super_admin'
   );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
+DROP FUNCTION IF EXISTS public.is_tenant_admin() CASCADE;
 CREATE OR REPLACE FUNCTION public.is_tenant_admin()
 RETURNS BOOLEAN AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.user_profiles 
     WHERE id = auth.uid() AND role IN ('admin', 'super_admin')
   );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- 1. Planos (Leitura pública/autenticada, escrita apenas Super Admin)
 DROP POLICY IF EXISTS "Qualquer autenticado vê os planos" ON public.plans;

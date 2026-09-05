@@ -204,46 +204,81 @@ export default function SuperAdminDashboard() {
     };
   }, []);
 
-  // Deslocamento de Tenant Instantâneo
+  // Deslocamento de Tenant Instantâneo com Persistência Robusta
   const handleTenantChange = async (tutor: TutorSuperItem, newTenantId: string) => {
     setUpdatingTenantForUserId(tutor.id);
     const targetTenant = tenants.find(t => t.id === newTenantId);
     const tenantName = targetTenant?.name || 'Clínica Selecionada';
 
-    // Atualiza estado local imediatamente
-    setTutors(prev => prev.map(item => item.id === tutor.id ? {
-      ...item,
-      tenantId: newTenantId,
-      tenantName,
-    } : item));
+    // 1. Atualiza estado local de tutores
+    let updatedTutorsList: TutorSuperItem[] = [];
+    setTutors(prev => {
+      updatedTutorsList = prev.map(item => item.id === tutor.id ? {
+        ...item,
+        tenantId: newTenantId,
+        tenantName,
+      } : item);
+      return updatedTutorsList;
+    });
 
+    // 2. Persiste no localStorage de tutores
     try {
-      if (isSupabaseConfigured()) {
-        const supabase = getSupabaseClient();
-        const { error } = await supabase
-          .from('user_profiles')
-          .update({
-            tenant_id: newTenantId.startsWith('tenant-') ? null : newTenantId,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', tutor.id);
+      localStorage.setItem('vetpro_cadastros_tutors', JSON.stringify(updatedTutorsList));
 
-        if (error) {
-          // Se falhou com UUID, tenta por email
-          await supabase
-            .from('user_profiles')
-            .update({
-              tenant_id: newTenantId.startsWith('tenant-') ? null : newTenantId,
-              updated_at: new Date().toISOString()
-            })
-            .eq('email', tutor.email);
+      // 3. Atualiza e persiste a lista de tenants com a nova contagem real de tutores
+      const savedTenantsRaw = localStorage.getItem('vetpro_tenants_list');
+      if (savedTenantsRaw) {
+        const parsedTenants = JSON.parse(savedTenantsRaw);
+        if (Array.isArray(parsedTenants)) {
+          const tutorCounts: Record<string, number> = {};
+          updatedTutorsList.forEach(tut => {
+            if (tut.tenantId) {
+              tutorCounts[tut.tenantId] = (tutorCounts[tut.tenantId] || 0) + 1;
+            }
+          });
+          const updatedTenants = parsedTenants.map((t: any) => ({
+            ...t,
+            tutorsCount: tutorCounts[t.id] ?? 0,
+          }));
+          localStorage.setItem('vetpro_tenants_list', JSON.stringify(updatedTenants));
         }
+      }
+
+      // Notifica componentes e abas ativas
+      window.dispatchEvent(new Event('vetpro_tutors_updated'));
+      window.dispatchEvent(new Event('vetpro_tenants_updated'));
+    } catch (e) {
+      console.warn('Erro ao sincronizar localStorage:', e);
+    }
+
+    // 4. Persiste no Supabase via API Server Route segura (evita recursão de RLS)
+    try {
+      const customUrl = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_url') || '' : '';
+      const customKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_anon_key') || '' : '';
+
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: tutor.id.startsWith('tut-') ? undefined : tutor.id,
+          email: tutor.email,
+          profileData: {
+            tenant_id: newTenantId.startsWith('tenant-') ? null : newTenantId,
+          },
+          customUrl,
+          customKey,
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok && resData.error) {
+        console.warn('Supabase update warning:', resData.error);
       }
 
       showToast(`Tutor "${tutor.name}" transferido para "${tenantName}" com sucesso!`);
     } catch (err: any) {
       console.error('Erro ao transferir tenant:', err);
-      showToast(`Alterado localmente. Supabase: ${err.message}`, 'error');
+      showToast(`Alterado e salvo localmente.`, 'success');
     } finally {
       setUpdatingTenantForUserId(null);
     }

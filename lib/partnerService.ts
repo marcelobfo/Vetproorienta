@@ -18,9 +18,13 @@ export interface Partner {
   latitude?: number;
   longitude?: number;
   is_featured: boolean; // se aparece nos anúncios rotativos em cards
-  banner_badge?: string; // Ex: "Desconto Exclusivo", "Plantão 24h", "Parceiro Oficial"
+  banner_badge?: string; // Ex: "Desconto Exclusivo", "Plantão 24h", "Parceiro Oficial", "Google Maps"
   promo_text?: string; // Ex: "10% de desconto na primeira consulta para clientes VetPro"
   rating?: number;
+  reviews_count?: number;
+  google_maps_url?: string;
+  open_now?: boolean;
+  source?: 'system' | 'google_maps';
   status: 'active' | 'inactive';
   created_at?: string;
   updated_at?: string;
@@ -39,100 +43,48 @@ export const PARTNER_CATEGORIES: { id: Partner['category']; label: string; iconN
   { id: 'hotel_pet', label: 'Hotel & Creche Pet', iconName: 'Home' },
 ];
 
-export const DEFAULT_PARTNERS: Partner[] = [
-  {
-    id: 'partner-petcare-24h',
-    name: 'Hospital Veterinário PetCare 24h',
-    category: 'hospital_24h',
-    description: 'Pronto-socorro 24 horas, UTI veterinária, internação e exames laboratoriais de emergência.',
-    phone: '(11) 3888-0000',
-    whatsapp: '11988880000',
-    email: 'emergencia@petcare24h.com.br',
-    website: 'https://petcare24h.com.br',
-    address: 'Av. Brigadeiro Luís Antônio, 2800',
-    neighborhood: 'Jardins',
-    city: 'São Paulo',
-    state: 'SP',
-    latitude: -23.5714,
-    longitude: -46.6548,
-    is_featured: true,
-    banner_badge: 'Plantão 24 Horas',
-    promo_text: '15% de desconto no atendimento de urgência para membros VetPro',
-    rating: 4.9,
-    status: 'active',
-    created_at: new Date(Date.now() - 86400000 * 90).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'partner-cao-elegante',
-    name: 'Pet Shop & Estética Cão Elegante',
-    category: 'banho_tosa',
-    description: 'Banho com ozonioterapia, tosa na tesoura, hidratação premium e spa pet relaxante.',
-    phone: '(11) 3055-1234',
-    whatsapp: '11995551234',
-    email: 'contato@caoelegante.com.br',
-    address: 'Rua Augusta, 1950',
-    neighborhood: 'Cerqueira César',
-    city: 'São Paulo',
-    state: 'SP',
-    latitude: -23.5583,
-    longitude: -46.6631,
-    is_featured: true,
-    banner_badge: 'Desconto Exclusivo',
-    promo_text: 'Ganhe hidratação grátis no primeiro banho agendado pelo app',
-    rating: 4.8,
-    status: 'active',
-    created_at: new Date(Date.now() - 86400000 * 45).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'partner-drogavet',
-    name: 'Drogavet Farmácia Veterinária',
-    category: 'farmacia',
-    description: 'Medicamentos manipulados sob medida em biscoitos saborizados, pastas e suspensões.',
-    phone: '(11) 3214-5500',
-    whatsapp: '11982145500',
-    email: 'atendimento@drogavet.com.br',
-    website: 'https://drogavet.com.br',
-    address: 'Rua Oscar Freire, 800',
-    neighborhood: 'Pinheiros',
-    city: 'São Paulo',
-    state: 'SP',
-    latitude: -23.5620,
-    longitude: -46.6710,
-    is_featured: true,
-    banner_badge: 'Parceiro Oficial',
-    promo_text: '10% OFF em todas as fórmulas manipuladas para assinantes VetPro',
-    rating: 5.0,
-    status: 'active',
-    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'partner-sao-francisco',
-    name: 'Clínica Veterinária São Francisco',
-    category: 'clinica',
-    description: 'Consultas especializadas, vacinas importadas, ultrassom e cirurgias com anestesia inalatória.',
-    phone: '(11) 3100-2200',
-    whatsapp: '11971002200',
-    email: 'contato@saovet.com.br',
-    address: 'Rua Domingos de Morais, 1200',
-    neighborhood: 'Vila Mariana',
-    city: 'São Paulo',
-    state: 'SP',
-    latitude: -23.5872,
-    longitude: -46.6385,
-    is_featured: true,
-    banner_badge: 'Rede Credenciada',
-    promo_text: 'Avaliação odontológica preventiva cortesia na consulta de rotina',
-    rating: 4.9,
-    status: 'active',
-    created_at: new Date(Date.now() - 86400000 * 60).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
+// Sem mock fictício: a lista padrão começa limpa, preenchendo apenas com dados reais da região e cadastros oficiais
+export const DEFAULT_PARTNERS: Partner[] = [];
 
 const LOCAL_STORAGE_KEY = 'vetpro_partners_list';
+const FAVORITES_STORAGE_KEY = 'vetpro_favorite_partners';
+
+// Gerenciador de Favoritos do Tutor
+export function getFavoritePartnerIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isPartnerFavorite(partnerId: string): boolean {
+  const favs = getFavoritePartnerIds();
+  return favs.includes(partnerId);
+}
+
+export function toggleFavoritePartner(partnerId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const favs = getFavoritePartnerIds();
+    let updated: string[];
+    let isFav = false;
+    if (favs.includes(partnerId)) {
+      updated = favs.filter(id => id !== partnerId);
+      isFav = false;
+    } else {
+      updated = [...favs, partnerId];
+      isFav = true;
+    }
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('vetpro_favorites_changed'));
+    return isFav;
+  } catch {
+    return false;
+  }
+}
 
 // Haversine formula para cálculo preciso de distância em quilômetros
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -152,20 +104,17 @@ export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lo
 
 // Obter parceiros salvos localmente
 export function getLocalPartners(): Partner[] {
-  if (typeof window === 'undefined') return DEFAULT_PARTNERS;
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(DEFAULT_PARTNERS));
-      return DEFAULT_PARTNERS;
-    }
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
+    if (Array.isArray(parsed)) {
       return parsed;
     }
-    return DEFAULT_PARTNERS;
+    return [];
   } catch {
-    return DEFAULT_PARTNERS;
+    return [];
   }
 }
 
@@ -190,13 +139,9 @@ export async function getPartners(): Promise<Partner[]> {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
-        const mergedMap = new Map<string, Partner>();
-        localPartners.forEach(p => mergedMap.set(p.id, p));
-        (data as Partner[]).forEach(p => mergedMap.set(p.id, { ...mergedMap.get(p.id), ...p }));
-        const finalPartners = Array.from(mergedMap.values());
-        saveLocalPartners(finalPartners);
-        return finalPartners;
+      if (!error && data) {
+        saveLocalPartners(data as Partner[]);
+        return data as Partner[];
       }
     }
   } catch (err) {
@@ -207,17 +152,66 @@ export async function getPartners(): Promise<Partner[]> {
 }
 
 export function resetDefaultPartners(): Partner[] {
-  saveLocalPartners(DEFAULT_PARTNERS);
-  return DEFAULT_PARTNERS;
+  saveLocalPartners([]);
+  return [];
+}
+
+export async function fetchGooglePlacesPartners(params: {
+  latitude?: number;
+  longitude?: number;
+  address?: string;
+  city?: string;
+  state?: string;
+  category?: string;
+  query?: string;
+}): Promise<Partner[]> {
+  try {
+    const res = await fetch('/api/partners/google-places', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.places)) {
+        return data.places;
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao consultar parceiros via API:', err);
+  }
+  return [];
 }
 
 // Listar apenas parceiros ativos para exibição pública / tutor
-export async function getActivePartners(userCoords?: { latitude: number; longitude: number } | null): Promise<Partner[]> {
+export async function getActivePartners(
+  userCoords?: { latitude: number; longitude: number } | null,
+  options?: { address?: string; city?: string; state?: string; includeGooglePlaces?: boolean; category?: string; query?: string }
+): Promise<Partner[]> {
   const all = await getPartners();
   let active = all.filter(p => p.status === 'active');
 
+  // Se solicitado busca integrada via API de mapas/estabelecimentos
+  let googlePlaces: Partner[] = [];
+  if (options?.includeGooglePlaces) {
+    googlePlaces = await fetchGooglePlacesPartners({
+      latitude: userCoords?.latitude,
+      longitude: userCoords?.longitude,
+      address: options.address,
+      city: options.city,
+      state: options.state,
+      category: options.category,
+      query: options.query,
+    });
+  }
+
+  // Mescla parceiros oficiais cadastrados + resultados reais da região
+  const existingIds = new Set(active.map(p => p.id));
+  const uniquePlaces = googlePlaces.filter(p => !existingIds.has(p.id));
+  let mergedList = [...active, ...uniquePlaces];
+
   if (userCoords && userCoords.latitude && userCoords.longitude) {
-    active = active.map(partner => {
+    mergedList = mergedList.map(partner => {
       if (partner.latitude && partner.longitude) {
         const dist = calculateDistanceKm(
           userCoords.latitude,
@@ -230,8 +224,8 @@ export async function getActivePartners(userCoords?: { latitude: number; longitu
       return partner;
     });
 
-    // Ordenar primeiro os que têm distância calculada mais próximos
-    active.sort((a, b) => {
+    // Ordenar primeiro os mais próximos
+    mergedList.sort((a, b) => {
       if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
         return a.distanceKm - b.distanceKm;
       }
@@ -241,14 +235,13 @@ export async function getActivePartners(userCoords?: { latitude: number; longitu
     });
   }
 
-  return active;
+  return mergedList;
 }
 
 // Listar parceiros com anúncios rotativos ativos
 export async function getFeaturedAdPartners(userCoords?: { latitude: number; longitude: number } | null): Promise<Partner[]> {
   const active = await getActivePartners(userCoords);
   const featured = active.filter(p => p.is_featured);
-  // Se houver parceiros ativos mas nenhum marcado como featured, retorna os primeiros ativos
   if (featured.length > 0) return featured;
   return active;
 }
@@ -297,7 +290,6 @@ export async function savePartner(partner: Partial<Partner> & { name: string; ca
         if (error) {
           console.warn('Erro ao salvar parceiro no Supabase:', error.message);
         } else if (data) {
-          // Atualiza storage local com o retorno oficial
           const currentList = getLocalPartners();
           const filtered = currentList.filter(p => p.id !== partnerToSave.id);
           saveLocalPartners([data as Partner, ...filtered]);

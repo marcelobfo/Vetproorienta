@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Building, Plus, Search, CheckCircle2, AlertCircle, ExternalLink, 
   ShieldCheck, MoreVertical, Edit2, RefreshCw, X, Trash2, Globe,
@@ -38,7 +38,7 @@ const DEFAULT_TENANTS: TenantItem[] = [
     subdomain: 'sao-francisco',
     customDomain: 'atendimento.saofranciscovet.com.br',
     createdAt: '15/01/2025',
-    tutorsCount: 8
+    tutorsCount: 1
   },
   {
     id: 'tenant-2',
@@ -52,7 +52,7 @@ const DEFAULT_TENANTS: TenantItem[] = [
     subdomain: 'petcare-24h',
     customDomain: 'portal.petcare24.com.br',
     createdAt: '02/03/2025',
-    tutorsCount: 14
+    tutorsCount: 1
   },
   {
     id: 'tenant-3',
@@ -65,7 +65,7 @@ const DEFAULT_TENANTS: TenantItem[] = [
     subdomain: 'app',
     customDomain: 'app.vetproorienta.com.br',
     createdAt: '10/01/2025',
-    tutorsCount: 25
+    tutorsCount: 0
   },
   {
     id: 'tenant-4',
@@ -78,7 +78,7 @@ const DEFAULT_TENANTS: TenantItem[] = [
     cnpj: '33.444.555/0001-22',
     subdomain: 'amigo-fiel',
     createdAt: '22/08/2026',
-    tutorsCount: 3
+    tutorsCount: 0
   }
 ];
 
@@ -137,9 +137,28 @@ export default function TenantsPage() {
     setTimeout(() => setCopiedTenantId(null), 3000);
   };
 
-  const loadTenants = async () => {
+  const loadTenants = useCallback(async () => {
     setLoading(true);
     try {
+      // 1. Carrega contagem de tutores de localStorage como base
+      const tutorCounts: Record<string, number> = {};
+      const savedTutorsRaw = localStorage.getItem('vetpro_cadastros_tutors');
+      if (savedTutorsRaw) {
+        try {
+          const parsedTutors = JSON.parse(savedTutorsRaw);
+          if (Array.isArray(parsedTutors)) {
+            parsedTutors.forEach((tut: any) => {
+              const tid = tut.tenantId || tut.tenant_id;
+              if (tid) {
+                tutorCounts[tid] = (tutorCounts[tid] || 0) + 1;
+              }
+            });
+          }
+        } catch (e) {
+          console.warn('Erro ao processar tutores locais:', e);
+        }
+      }
+
       if (isSupabaseConfigured()) {
         const supabase = getSupabaseClient();
         const { data, error } = await supabase
@@ -147,15 +166,16 @@ export default function TenantsPage() {
           .select('*')
           .order('created_at', { ascending: false });
 
-        // Busca contagem de tutores por tenant
+        // Busca contagem real de tutores por tenant do Supabase
         const { data: userProfiles } = await supabase
           .from('user_profiles')
-          .select('id, tenant_id');
+          .select('id, tenant_id, role');
 
-        const tutorCounts: Record<string, number> = {};
-        if (userProfiles) {
+        if (userProfiles && userProfiles.length > 0) {
+          // Limpa e recalcula com base no banco real
+          Object.keys(tutorCounts).forEach(k => delete tutorCounts[k]);
           userProfiles.forEach((u: any) => {
-            if (u.tenant_id) {
+            if (u.tenant_id && (u.role === 'tutor' || !u.role || u.role === 'client')) {
               tutorCounts[u.tenant_id] = (tutorCounts[u.tenant_id] || 0) + 1;
             }
           });
@@ -164,7 +184,14 @@ export default function TenantsPage() {
         if (error) {
           console.warn('Erro ao ler tenants do Supabase:', error.message);
           const saved = localStorage.getItem('vetpro_tenants_list');
-          if (saved) setTenants(JSON.parse(saved));
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            const recalculated = parsed.map((t: TenantItem) => ({
+              ...t,
+              tutorsCount: tutorCounts[t.id] ?? t.tutorsCount ?? 0,
+            }));
+            setTenants(recalculated);
+          }
         } else if (data && data.length > 0) {
           const mapped: TenantItem[] = data.map((t: any) => ({
             id: t.id,
@@ -185,18 +212,39 @@ export default function TenantsPage() {
           localStorage.setItem('vetpro_tenants_list', JSON.stringify(mapped));
         } else {
           const saved = localStorage.getItem('vetpro_tenants_list');
-          if (saved) setTenants(JSON.parse(saved));
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            const recalculated = parsed.map((t: TenantItem) => ({
+              ...t,
+              tutorsCount: tutorCounts[t.id] ?? t.tutorsCount ?? 0,
+            }));
+            setTenants(recalculated);
+          }
         }
       } else {
         const saved = localStorage.getItem('vetpro_tenants_list');
-        if (saved) setTenants(JSON.parse(saved));
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const recalculated = parsed.map((t: TenantItem) => ({
+            ...t,
+            tutorsCount: tutorCounts[t.id] ?? t.tutorsCount ?? 0,
+          }));
+          setTenants(recalculated);
+        } else {
+          const withCounts = DEFAULT_TENANTS.map(t => ({
+            ...t,
+            tutorsCount: tutorCounts[t.id] ?? t.tutorsCount ?? 0,
+          }));
+          setTenants(withCounts);
+          localStorage.setItem('vetpro_tenants_list', JSON.stringify(withCounts));
+        }
       }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -206,10 +254,21 @@ export default function TenantsPage() {
       }
     };
     void fetchAsync();
+
+    const handleSync = () => {
+      if (isMounted) {
+        void loadTenants();
+      }
+    };
+    window.addEventListener('vetpro_tutors_updated', handleSync);
+    window.addEventListener('vetpro_tenants_updated', handleSync);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('vetpro_tutors_updated', handleSync);
+      window.removeEventListener('vetpro_tenants_updated', handleSync);
     };
-  }, []);
+  }, [loadTenants]);
 
   const handleOpenNewModal = () => {
     setEditingTenant(null);
