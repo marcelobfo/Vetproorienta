@@ -117,6 +117,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (!isMounted) return;
 
       if (!session?.user) {
+        // Verifica se há perfil ou e-mail admin/super_admin salvo localmente
+        const localEmail = typeof window !== 'undefined' ? (localStorage.getItem('vetpro_user_email') || localStorage.getItem('vetpro_tutor_email') || '') : '';
+        const localRole = typeof window !== 'undefined' ? (localStorage.getItem('vetpro_user_role') as 'tutor' | 'admin' | 'super_admin' | null) : null;
+        const isSuperAdminEmail = localEmail.toLowerCase() === 'marcelobfo@gmail.com' || localEmail.toLowerCase().includes('admin@vetpro');
+
+        if (localRole === 'super_admin' || isSuperAdminEmail) {
+          setRole('super_admin');
+          setProfileName('Marcelo (Super Admin)');
+          setHasActivePlan(true);
+          setUserEmail(localEmail || 'marcelobfo@gmail.com');
+          setLoading(false);
+          return;
+        }
+
+        if (localRole === 'admin') {
+          setRole('admin');
+          setProfileName('Veterinário / Administrador');
+          setHasActivePlan(true);
+          setUserEmail(localEmail || 'admin@vetpro.com.br');
+          setLoading(false);
+          return;
+        }
+
         // Tutor visitante ou sem login prévio
         const subStatus = checkTutorSubscriptionStatus();
         setHasActivePlan(subStatus.hasActivePlan);
