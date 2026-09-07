@@ -4,15 +4,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   PawPrint, CheckCircle2, Video, Heart, Shield, HelpCircle, 
-  MessageCircle, X, Clock, Smartphone, Star, Search, FileText, 
+  MessageCircle, X, Clock, Smartphone, Laptop, Star, Search, FileText, 
   AlertCircle, RefreshCw, Lock, Sparkles, ChevronDown, 
-  ShieldAlert, Stethoscope, HeartPulse, UserCheck, Baby, Activity, Navigation, Building
+  ShieldAlert, Stethoscope, HeartPulse, UserCheck, Baby, Activity, Navigation, Building, Download
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createAsaasCustomer, createAsaasSubscription, getAsaasConfig } from '@/lib/asaas';
 import { getEvolutionConfig } from '@/lib/evolution';
 import { PartnerRotativeAds } from '@/components/PartnerRotativeAds';
 import { supabase } from '@/lib/supabase';
+import { triggerPWAInstallModal } from '@/components/PwaInstallPrompt';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -315,7 +316,16 @@ export default function LandingPage() {
             <a href="#faq" className="hover:text-brand-text transition-colors">Dúvidas</a>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={triggerPWAInstallModal}
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full bg-brand-teal/15 hover:bg-brand-teal/25 border border-brand-teal/30 text-brand-teal transition-all shadow-sm active:scale-95"
+              title="Instalar App no iPhone, Mac ou Android"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Instalar App</span>
+            </button>
             <Link 
               href="/login"
               className="text-xs font-semibold px-4 py-2 rounded-full border border-brand-border-strong hover:bg-brand-surface text-brand-text transition-colors"
@@ -324,7 +334,7 @@ export default function LandingPage() {
             </Link>
             <a 
               href="#planos"
-              className="bg-brand-teal text-brand-bg px-5 py-2 rounded-full font-display font-semibold text-[13.5px] hover:bg-brand-teal/90 transition-all shadow-sm"
+              className="bg-brand-teal text-brand-bg px-4 sm:px-5 py-2 rounded-full font-display font-semibold text-[13.5px] hover:bg-brand-teal/90 transition-all shadow-sm"
             >
               Assinar Plano
             </a>

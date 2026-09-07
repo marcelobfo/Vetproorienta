@@ -23,7 +23,38 @@ body {
   background-color: var(--color-brand-bg);
   color: var(--color-brand-text);
   font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* Safe area insets para iPhone Notch, Dynamic Island e macOS Titlebar */
+.pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.pl-safe {
+  padding-left: max(1rem, env(safe-area-inset-left));
+}
+
+.pr-safe {
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+
+/* PWA Standalone Mode adjustments */
+@media all and (display-mode: standalone) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
 
 /* Custom Scrollbar moderna e elegante */
 ::-webkit-scrollbar {
