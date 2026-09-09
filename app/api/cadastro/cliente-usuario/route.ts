@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
       planId, 
       planName, 
       planPrice, 
+      billingCycle: requestedBillingCycle,
       dueDaysOffset,
       asaasConfig: clientAsaasConfig,
       supabaseConfig: clientSupabaseConfig,
@@ -46,8 +47,10 @@ export async function POST(req: NextRequest) {
     }
 
     const initialPassword = rawCpf; // A senha inicial é o próprio CPF
-    const numericPrice = Number(planPrice) || (planId === 'especialista' ? 29.90 : 9.90);
-    const selectedPlanName = planName || (planId === 'especialista' ? 'Especialista' : 'Essencial');
+    const isAnnualPlan = planId === 'anual-promocional' || planId === 'anual' || requestedBillingCycle === 'YEARLY';
+    const numericPrice = Number(planPrice) || (isAnnualPlan ? 59.90 : (planId === 'especialista' ? 29.90 : 9.90));
+    const selectedPlanName = planName || (isAnnualPlan ? 'Anual Essencial' : (planId === 'especialista' ? 'Especialista' : 'Essencial'));
+    const subscriptionCycle = (requestedBillingCycle || (isAnnualPlan ? 'YEARLY' : 'MONTHLY')) as 'MONTHLY' | 'YEARLY' | 'WEEKLY' | 'BIWEEKLY' | 'QUARTERLY' | 'SEMIANNUALLY';
 
     // -------------------------------------------------------------
     // 1. Criar ou Recuperar Cliente no Asaas
@@ -99,14 +102,15 @@ export async function POST(req: NextRequest) {
         targetDate.setDate(targetDate.getDate() + offset);
         const nextDueDate = targetDate.toISOString().split('T')[0];
 
+        const cycleLabel = subscriptionCycle === 'YEARLY' ? 'ano' : 'mês';
         const subRes = await directCreateAsaasSubscription(
           {
             customer: asaasCustomerId,
             billingType: 'UNDEFINED', // Permite PIX, Cartão ou Boleto no checkout
             value: numericPrice,
             nextDueDate,
-            cycle: 'MONTHLY',
-            description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta - ${trimmedName} (R$ ${numericPrice.toFixed(2)}/mês)`,
+            cycle: subscriptionCycle,
+            description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta - ${trimmedName} (R$ ${numericPrice.toFixed(2)}/${cycleLabel})`,
             externalReference: `sub_${planId || 'essencial'}_${rawCpf}`,
           },
           mergedAsaasConfig
@@ -337,6 +341,7 @@ export async function POST(req: NextRequest) {
         cpf: rawCpf,
         planName: selectedPlanName,
         planPrice: numericPrice,
+        paymentId: paymentId || undefined,
         pixCopiaECola,
         pixQrCodeImage,
         paymentUrl,

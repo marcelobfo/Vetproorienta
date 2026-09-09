@@ -36,7 +36,7 @@ Para realizarmos a triagem clínica e cadastrarmos o prontuário no sistema, por
 * *Idade:*
 * *Peso aproximado:*
 
-E me conte o que está acontecendo com ele (sintomas, tempo de evolução e comportamento).`;
+E me conte o que está acontecendo com ele (sinais clínicos, tempo de evolução e comportamento).`;
 
 function generateUniqueId(prefix = 'id'): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -57,9 +57,9 @@ Já estou com a ficha cadastral do(a) *${pet.name}* aberta no sistema:
 * *Raça:* ${pet.breed || 'SRD'}
 * *Sexo:* ${pet.sex || 'Não informado'}
 * *Idade:* ${pet.age || 'Não informada'}
-* *Peso:* ${pet.weight || 'Não informado'}${pet.symptoms ? `\n* *Últimos sintomas registrados:* ${pet.symptoms}` : ''}
+* *Peso:* ${pet.weight || 'Não informado'}${pet.symptoms ? `\n* *Últimos sinais clínicos registrados:* ${pet.symptoms}` : ''}
 
-Como posso ajudar você e o(a) *${pet.name}* hoje? Me conte o que você observou de diferente (comportamento, apetite, sintomas ou queixas).`;
+Como posso ajudar você e o(a) *${pet.name}* hoje? Me conte o que você observou de diferente (comportamento, apetite, sinais clínicos ou queixas).`;
 }
 
 function ChatContent() {
@@ -685,8 +685,8 @@ function ChatContent() {
               onChange={(e) => setInput(e.target.value)}
               placeholder={
                 activePet 
-                  ? `Descreva os sintomas ou envie foto/exame do(a) ${activePet.name}...` 
-                  : "Descreva os sintomas ou envie uma foto para análise..."
+                  ? `Descreva os sinais clínicos ou envie foto/exame do(a) ${activePet.name}...` 
+                  : "Descreva os sinais clínicos ou envie uma foto para análise..."
               }
               disabled={isLoading}
               className="w-full bg-brand-bg border border-brand-border-strong rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:border-brand-teal transition-colors disabled:opacity-50 text-[15px]"

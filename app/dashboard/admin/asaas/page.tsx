@@ -20,6 +20,7 @@ import {
   AsaasSubscriptionResponse,
   getAsaasBaseUrl
 } from '@/lib/asaas';
+import { getEvolutionConfig } from '@/lib/evolution';
 import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
 
 export default function AsaasAdminPage() {
@@ -66,10 +67,12 @@ export default function AsaasAdminPage() {
     customerName: string;
     customerEmail: string;
     customerPhone: string;
+    paymentId?: string;
     subscriptionId?: string;
     planName: string;
     planPrice: number;
     status?: string;
+    isOverdue?: boolean;
     pixQrCode?: string;
     pixCopiaECola?: string;
     invoiceUrl?: string;
@@ -204,8 +207,10 @@ export default function AsaasAdminPage() {
     const customerEmail = target.email || '';
     const customerPhone = target.mobilePhone || target.phone || '';
     const subscriptionId = isSubscription ? target.id : undefined;
+    const paymentId = target.paymentId || (!isSubscription && target.id?.startsWith('pay_') ? target.id : undefined);
     const planPrice = target.value ? Number(target.value) : (config.planEssencialPrice || 9.90);
     const planName = target.description?.includes('Especialista') ? 'Especialista' : 'Essencial';
+    const isOverdue = target.status === 'OVERDUE';
 
     setWhatsAppModal({
       isOpen: true,
@@ -214,10 +219,12 @@ export default function AsaasAdminPage() {
       customerName,
       customerEmail,
       customerPhone,
+      paymentId,
       subscriptionId,
       planName,
       planPrice,
       status: target.status || 'PENDING',
+      isOverdue,
       isSendingEvolution: false,
       evolutionStatus: null,
       copiedPix: false,
@@ -231,6 +238,7 @@ export default function AsaasAdminPage() {
         body: JSON.stringify({
           customerId,
           subscriptionId,
+          paymentId,
           email: customerEmail || undefined,
           name: customerName,
           phone: customerPhone || undefined,
@@ -249,12 +257,14 @@ export default function AsaasAdminPage() {
         setWhatsAppModal(prev => ({
           ...prev,
           loading: false,
+          paymentId: data.paymentId || prev.paymentId,
           pixQrCode: data.pixQrCodeImage,
           pixCopiaECola: data.pixCopiaECola,
           invoiceUrl: data.invoiceUrl || data.paymentUrl,
           bankSlipUrl: data.bankSlipUrl,
           whatsappUrl: data.whatsappUrl,
           status: data.status || prev.status,
+          isOverdue: data.status === 'OVERDUE' || prev.isOverdue,
         }));
         addLog(`⚡ Fatura e Pix carregados para '${customerName}'.`);
       } else {
@@ -273,7 +283,7 @@ export default function AsaasAdminPage() {
     }
   };
 
-  // Disparo via Evolution API
+  // Disparo de mensagem WhatsApp
   const handleSendEvolutionInModal = async () => {
     if (!whatsAppModal.customerPhone) {
       showToast('Por favor, informe o telefone/WhatsApp do tutor acima.', 'error');
@@ -281,9 +291,10 @@ export default function AsaasAdminPage() {
     }
 
     setWhatsAppModal(prev => ({ ...prev, isSendingEvolution: true, evolutionStatus: null }));
-    addLog(`🚀 Disparando WhatsApp via Evolution API para ${whatsAppModal.customerPhone}...`);
+    addLog(`🚀 Enviando cobrança via WhatsApp para ${whatsAppModal.customerPhone}...`);
 
     try {
+      const evoConfig = getEvolutionConfig();
       const res = await fetch('/api/asaas/send-whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -293,37 +304,45 @@ export default function AsaasAdminPage() {
           email: whatsAppModal.customerEmail,
           planName: whatsAppModal.planName,
           planPrice: whatsAppModal.planPrice,
+          paymentId: whatsAppModal.paymentId,
+          invoiceNumber: whatsAppModal.paymentId,
           pixCopiaECola: whatsAppModal.pixCopiaECola,
           paymentUrl: whatsAppModal.invoiceUrl,
+          invoiceUrl: whatsAppModal.invoiceUrl,
           bankSlipUrl: whatsAppModal.bankSlipUrl,
+          isOverdue: whatsAppModal.isOverdue || whatsAppModal.status === 'OVERDUE',
+          serverUrl: evoConfig.serverUrl,
+          apiKey: evoConfig.apiKey,
+          instanceName: evoConfig.defaultInstance,
         }),
       });
 
       const data = await res.json();
-      if (data.sentViaEvolution) {
+      if (data.sentViaEvolution || data.success) {
         setWhatsAppModal(prev => ({
           ...prev,
           isSendingEvolution: false,
           evolutionStatus: {
             success: true,
-            text: '✅ Mensagem enviada com sucesso para o WhatsApp via Evolution API!',
+            text: `✅ Mensagem enviada com sucesso para o WhatsApp (${whatsAppModal.paymentId ? `Fatura Nº ${whatsAppModal.paymentId}` : 'Cobrança Asaas'})!`,
           },
         }));
-        addLog(`✅ WhatsApp disparado com sucesso para ${whatsAppModal.customerName}.`);
-        showToast('WhatsApp disparado com sucesso via Evolution API!');
+        addLog(`✅ WhatsApp enviado com sucesso para ${whatsAppModal.customerName}.`);
+        showToast('Mensagem enviada com sucesso pelo WhatsApp!');
       } else {
+        const errorMsg = data.evolutionError || data.error;
         setWhatsAppModal(prev => ({
           ...prev,
           isSendingEvolution: false,
           whatsappUrl: data.whatsappUrl || prev.whatsappUrl,
           evolutionStatus: {
             success: false,
-            text: data.evolutionError 
-              ? `⚠️ Evolution API não respondeu (${data.evolutionError}). Use o botão 'Abrir WhatsApp Web' abaixo para enviar manualmente.`
-              : '⚠️ Instância da Evolution API desconectada. Clique em "Abrir WhatsApp Web" abaixo para enviar diretamente.',
+            text: errorMsg 
+              ? `Não foi possível enviar automaticamente (${errorMsg}). Utilize o botão "Abrir no WhatsApp Web" abaixo para enviar diretamente ao tutor.`
+              : 'Não foi possível enviar automaticamente. Clique em "Abrir no WhatsApp Web" abaixo para enviar com link e chave Pix prontos.',
           },
         }));
-        addLog(`⚠️ Evolution API não conectada. Disponibilizado fallback WhatsApp Web.`);
+        addLog(`⚠️ Envio automático indisponível. Disponibilizado fallback WhatsApp Web.`);
       }
     } catch (err: any) {
       setWhatsAppModal(prev => ({
@@ -331,7 +350,7 @@ export default function AsaasAdminPage() {
         isSendingEvolution: false,
         evolutionStatus: {
           success: false,
-          text: `⚠️ Erro de rede ao conectar à Evolution API: ${err.message}. Use o botão 'Abrir WhatsApp Web'.`,
+          text: `Falha de rede ao enviar: ${err.message}. Use o botão "Abrir no WhatsApp Web".`,
         },
       }));
     }
@@ -1485,7 +1504,7 @@ export default function AsaasAdminPage() {
                     Cobrança & WhatsApp — {whatsAppModal.customerName}
                   </h3>
                   <p className="text-xs text-brand-text-muted">
-                    Envie a fatura e o código Pix via Evolution API ou WhatsApp Web direto.
+                    Envie a fatura e o código Pix diretamente para o WhatsApp do tutor.
                   </p>
                 </div>
               </div>
@@ -1542,7 +1561,22 @@ export default function AsaasAdminPage() {
                     <input
                       type="text"
                       value={whatsAppModal.customerPhone}
-                      onChange={(e) => setWhatsAppModal(prev => ({ ...prev, customerPhone: e.target.value }))}
+                      onChange={(e) => {
+                        const newPhone = e.target.value;
+                        const cleanPhone = newPhone.replace(/\D/g, '');
+                        const fullPhone = cleanPhone.length <= 11 && !cleanPhone.startsWith('55') ? `55${cleanPhone}` : cleanPhone;
+                        const text = encodeURIComponent(
+                          `Olá ${whatsAppModal.customerName || 'Cliente'}! Segue a cobrança do seu plano ${whatsAppModal.planName || 'Essencial'} VetPro (R$ ${whatsAppModal.planPrice.toFixed(2)}):\n\n` +
+                          (whatsAppModal.pixCopiaECola ? `Chave Pix Copia e Cola:\n${whatsAppModal.pixCopiaECola}\n\n` : '') +
+                          (whatsAppModal.invoiceUrl ? `Link da Fatura Asaas: ${whatsAppModal.invoiceUrl}\n\n` : '') +
+                          `Agradecemos pela confiança na saúde do seu pet!`
+                        );
+                        setWhatsAppModal(prev => ({
+                          ...prev,
+                          customerPhone: newPhone,
+                          whatsappUrl: `https://wa.me/${fullPhone}?text=${text}`,
+                        }));
+                      }}
                       placeholder="DDD + Número (ex: 11999998888)"
                       className="w-full pl-9 pr-3 py-2.5 bg-brand-bg border border-brand-border-strong rounded-xl text-brand-text font-mono text-xs focus:outline-none focus:border-brand-teal"
                     />
@@ -1612,7 +1646,7 @@ export default function AsaasAdminPage() {
 
                 {/* BOTÕES DE AÇÃO EXIGIDOS */}
                 <div className="space-y-2.5 pt-2">
-                  {/* Botão 1: Enviar WhatsApp via Evolution API */}
+                  {/* Botão 1: Enviar via WhatsApp */}
                   <button
                     type="button"
                     onClick={handleSendEvolutionInModal}
@@ -1621,11 +1655,11 @@ export default function AsaasAdminPage() {
                   >
                     <Send className={`w-4 h-4 ${whatsAppModal.isSendingEvolution ? 'animate-bounce' : ''}`} />
                     <span>
-                      {whatsAppModal.isSendingEvolution ? 'Enviando pelo WhatsApp...' : 'Enviar WhatsApp (via Evolution API)'}
+                      {whatsAppModal.isSendingEvolution ? 'Enviando pelo WhatsApp...' : 'Enviar via WhatsApp'}
                     </span>
                   </button>
 
-                  {/* Botão 2: Abrir WhatsApp Web (Fallback com texto pronto) */}
+                  {/* Botão 2: Abrir no WhatsApp Web (Fallback com texto pronto) */}
                   {whatsAppModal.whatsappUrl && (
                     <a
                       href={whatsAppModal.whatsappUrl}
@@ -1634,7 +1668,7 @@ export default function AsaasAdminPage() {
                       className="w-full py-2.5 px-4 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-emerald-500/30 text-emerald-400 font-bold text-xs transition-all flex items-center justify-center gap-2"
                     >
                       <MessageCircle className="w-4 h-4" />
-                      <span>Abrir WhatsApp Web</span>
+                      <span>Abrir no WhatsApp Web</span>
                       <ExternalLink className="w-3.5 h-3.5 opacity-70" />
                     </a>
                   )}

@@ -19,6 +19,7 @@ import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
 import { SecurityDeleteModal } from '@/components/SecurityDeleteModal';
 import { isModuleActive, toggleSystemModule, SYSTEM_MODULE_KEYS } from '@/lib/moduleService';
 import { getAsaasConfig } from '@/lib/asaas';
+import { getEvolutionConfig } from '@/lib/evolution';
 
 export default function CentralCadastrosPage() {
   const [activeTab, setActiveTab] = useState<'tutores' | 'veterinarios' | 'parceiros'>('tutores');
@@ -44,6 +45,7 @@ export default function CentralCadastrosPage() {
     isOpen: boolean;
     tutor: TutorRecord | null;
     loading: boolean;
+    paymentId?: string;
     invoiceUrl?: string;
     pixQrCode?: string;
     pixCopiaECola?: string;
@@ -257,6 +259,7 @@ export default function CentralCadastrosPage() {
           isOpen: true,
           tutor,
           loading: false,
+          paymentId: data.paymentId,
           invoiceUrl: invUrl,
           pixQrCode: data.pixQrCodeImage,
           pixCopiaECola: pixCode,
@@ -305,42 +308,55 @@ export default function CentralCadastrosPage() {
     setInvoiceModalState(prev => ({ ...prev, isSendingEvolution: true, evolutionStatus: null }));
 
     try {
+      const evoConfig = getEvolutionConfig();
       const res = await fetch('/api/asaas/send-whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone,
+          name: tutor?.name || 'Tutor',
           customerName: tutor?.name || 'Tutor',
+          email: tutor?.email,
           planName: invoiceModalState.planName || tutor?.plan_name || 'Essencial',
           planPrice: invoiceModalState.value || 9.90,
+          paymentId: invoiceModalState.paymentId,
+          invoiceNumber: invoiceModalState.paymentId,
           pixCopiaECola: invoiceModalState.pixCopiaECola,
+          paymentUrl: invoiceModalState.invoiceUrl,
           invoiceUrl: invoiceModalState.invoiceUrl,
-          paymentLink: invoiceModalState.invoiceUrl,
+          bankSlipUrl: invoiceModalState.bankSlipUrl,
+          isOverdue: invoiceModalState.status === 'OVERDUE',
+          serverUrl: evoConfig.serverUrl,
+          apiKey: evoConfig.apiKey,
+          instanceName: evoConfig.defaultInstance,
         }),
       });
 
       const data = await res.json();
-      if (data.success) {
-        showToast('Mensagem com Pix enviada com sucesso pelo WhatsApp!');
+      if (data.sentViaEvolution || data.success) {
+        showToast('Mensagem enviada com sucesso pelo WhatsApp!');
         setInvoiceModalState(prev => ({
           ...prev,
           isSendingEvolution: false,
           evolutionStatus: {
             success: true,
-            text: `✅ Mensagem enviada com sucesso via Evolution API para ${phone}!`,
+            text: `✅ Mensagem enviada com sucesso para o WhatsApp (${invoiceModalState.paymentId ? `Fatura Nº ${invoiceModalState.paymentId}` : 'Cobrança Asaas'})!`,
           },
         }));
       } else {
-        const errorMsg = data.error || 'Evolution API não conectada.';
+        const errorMsg = data.evolutionError || data.error;
         setInvoiceModalState(prev => ({
           ...prev,
           isSendingEvolution: false,
+          whatsappUrl: data.whatsappUrl || prev.whatsappUrl,
           evolutionStatus: {
             success: false,
-            text: `⚠️ Instância Evolution API temporariamente desconectada. Utilize o botão "Abrir WhatsApp Web" abaixo para enviar diretamente ao tutor. (${errorMsg})`,
+            text: errorMsg
+              ? `Não foi possível enviar automaticamente (${errorMsg}). Utilize o botão "Abrir no WhatsApp Web" abaixo para enviar diretamente.`
+              : 'Não foi possível enviar automaticamente. Utilize o botão "Abrir no WhatsApp Web" abaixo para enviar diretamente ao tutor.',
           },
         }));
-        showToast('Evolution API desconectada. Utilize o WhatsApp Web.', 'error');
+        showToast('Envio automático indisponível. Utilize o WhatsApp Web.', 'error');
       }
     } catch (err: any) {
       setInvoiceModalState(prev => ({
@@ -348,10 +364,10 @@ export default function CentralCadastrosPage() {
         isSendingEvolution: false,
         evolutionStatus: {
           success: false,
-          text: '⚠️ Falha de comunicação com a Evolution API. Clique em "Abrir WhatsApp Web" para enviar direto pelo navegador.',
+          text: 'Falha de comunicação no envio automático. Clique em "Abrir no WhatsApp Web" para enviar diretamente.',
         },
       }));
-      showToast('Evolution API indisponível. Utilize o WhatsApp Web.', 'error');
+      showToast('Utilize o WhatsApp Web para enviar.', 'error');
     }
   };
 
@@ -2039,7 +2055,7 @@ export default function CentralCadastrosPage() {
 
                   {/* BOTÕES DE AÇÃO EXIGIDOS */}
                   <div className="space-y-2.5 pt-2">
-                    {/* Botão 1: Enviar WhatsApp via Evolution API */}
+                    {/* Botão 1: Enviar via WhatsApp */}
                     <button
                       type="button"
                       onClick={handleSendWhatsAppFromInvoiceModal}
@@ -2048,11 +2064,11 @@ export default function CentralCadastrosPage() {
                     >
                       <Send className={`w-4 h-4 ${invoiceModalState.isSendingEvolution ? 'animate-bounce' : ''}`} />
                       <span>
-                        {invoiceModalState.isSendingEvolution ? 'Enviando pelo WhatsApp...' : 'Enviar WhatsApp (via Evolution API)'}
+                        {invoiceModalState.isSendingEvolution ? 'Enviando pelo WhatsApp...' : 'Enviar via WhatsApp'}
                       </span>
                     </button>
 
-                    {/* Botão 2: Abrir WhatsApp Web (Fallback com texto pronto) */}
+                    {/* Botão 2: Abrir no WhatsApp Web (Fallback) */}
                     {invoiceModalState.whatsappUrl && (
                       <a
                         href={invoiceModalState.whatsappUrl}
@@ -2061,7 +2077,7 @@ export default function CentralCadastrosPage() {
                         className="w-full py-2.5 px-4 rounded-xl bg-brand-surface-2 hover:bg-brand-surface border border-emerald-500/30 text-emerald-400 font-bold text-xs transition-all flex items-center justify-center gap-2"
                       >
                         <MessageCircle className="w-4 h-4" />
-                        <span>Abrir WhatsApp Web</span>
+                        <span>Abrir no WhatsApp Web</span>
                         <ExternalLink className="w-3.5 h-3.5 opacity-70" />
                       </a>
                     )}

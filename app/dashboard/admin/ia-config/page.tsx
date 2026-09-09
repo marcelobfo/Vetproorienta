@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useId } from 'react';
+import { useState, useEffect, useRef, useId, useCallback } from 'react';
 import { 
   Bot, Key, FileText, Save, Plus, Trash2, CheckCircle2, 
   AlertCircle, RefreshCw, Sparkles, Cpu, X, UploadCloud, 
@@ -89,6 +89,8 @@ export default function IAConfigPage() {
   const [activeTab, setActiveTab] = useState<'prompt' | 'knowledge' | 'api'>('prompt');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [currentTenantId, setCurrentTenantId] = useState<string>('');
+  const [currentUserId, setCurrentUserId] = useState<string>('');
 
   // Form State - Prompt
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT);
@@ -128,54 +130,69 @@ export default function IAConfigPage() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Carregar do Supabase ou LocalStorage
-  const loadData = async () => {
+  // Carregar do Supabase via API com fallback para LocalStorage
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      let resolvedTenantId = currentTenantId;
+      let resolvedUserId = currentUserId;
+
       if (isSupabaseConfigured()) {
         const supabase = getSupabaseClient();
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            resolvedUserId = session.user.id;
+            setCurrentUserId(session.user.id);
+
+            const { data: prof } = await supabase
+              .from('user_profiles')
+              .select('tenant_id')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            if (prof?.tenant_id) {
+              resolvedTenantId = prof.tenant_id;
+              setCurrentTenantId(prof.tenant_id);
+            }
+          }
+        } catch (authErr) {
+          console.warn('Sessão Supabase:', authErr);
+        }
 
         // 1. Carregar Configurações de IA
-        const { data: aiData } = await supabase
-          .from('ai_settings')
-          .select('*')
-          .limit(1)
-          .maybeSingle();
-
-        if (aiData) {
-          if (aiData.system_prompt) setSystemPrompt(aiData.system_prompt);
-          if (aiData.model_name) setModelName(aiData.model_name);
-          if (aiData.temperature !== undefined) setTemperature(Number(aiData.temperature));
-          if (aiData.max_output_tokens) setMaxTokens(Number(aiData.max_output_tokens));
-          if (aiData.api_key) setApiKey(aiData.api_key);
-        } else {
+        try {
+          const aiRes = await fetch(`/api/admin/ai-settings${resolvedTenantId ? `?tenantId=${resolvedTenantId}` : ''}`);
+          const aiJson = await aiRes.json();
+          if (aiJson.settings) {
+            if (aiJson.settings.system_prompt) setSystemPrompt(aiJson.settings.system_prompt);
+            if (aiJson.settings.model_name) setModelName(aiJson.settings.model_name);
+            if (aiJson.settings.temperature !== undefined) setTemperature(Number(aiJson.settings.temperature));
+            if (aiJson.settings.max_output_tokens) setMaxTokens(Number(aiJson.settings.max_output_tokens));
+            if (aiJson.settings.api_key) setApiKey(aiJson.settings.api_key);
+          } else {
+            const savedPrompt = localStorage.getItem('vetpro_ai_prompt');
+            if (savedPrompt) setSystemPrompt(savedPrompt);
+          }
+        } catch {
           const savedPrompt = localStorage.getItem('vetpro_ai_prompt');
           if (savedPrompt) setSystemPrompt(savedPrompt);
         }
 
         // 2. Carregar Base de Conhecimento RAG
-        const { data: kbData } = await supabase
-          .from('knowledge_base')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (kbData && kbData.length > 0) {
-          const mapped: KnowledgeItem[] = kbData.map((k: any) => ({
-            id: k.id,
-            title: k.title,
-            category: k.category || 'Geral',
-            content: k.content,
-            fileName: k.file_name,
-            fileSize: k.file_size ? Number(k.file_size) : undefined,
-            fileType: k.file_type,
-            fileUrl: k.file_url,
-            pageCount: k.page_count ? Number(k.page_count) : undefined,
-            isActive: k.is_active ?? true,
-            createdAt: k.created_at
-          }));
-          setKnowledgeItems(mapped);
-          localStorage.setItem('vetpro_knowledge_base', JSON.stringify(mapped));
-        } else {
+        try {
+          const kbRes = await fetch(`/api/admin/knowledge-base${resolvedTenantId ? `?tenantId=${resolvedTenantId}` : ''}`);
+          const kbJson = await kbRes.json();
+          if (kbJson.items && kbJson.items.length > 0) {
+            setKnowledgeItems(kbJson.items);
+            localStorage.setItem('vetpro_knowledge_base', JSON.stringify(kbJson.items));
+          } else {
+            const savedKb = localStorage.getItem('vetpro_knowledge_base');
+            if (savedKb) {
+              setKnowledgeItems(JSON.parse(savedKb));
+            }
+          }
+        } catch {
           const savedKb = localStorage.getItem('vetpro_knowledge_base');
           if (savedKb) {
             setKnowledgeItems(JSON.parse(savedKb));
@@ -196,7 +213,7 @@ export default function IAConfigPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentTenantId, currentUserId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -209,7 +226,7 @@ export default function IAConfigPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [loadData]);
 
   // Processamento de Upload de Arquivo (PDF / TXT / DOCX)
   const handleFileProcess = async (file: File) => {
@@ -271,25 +288,25 @@ export default function IAConfigPage() {
       localStorage.setItem('vetpro_ai_temp', String(temperature));
 
       if (isSupabaseConfigured()) {
-        const supabase = getSupabaseClient();
-        
-        const payload = {
-          provider: 'gemini',
-          model_name: modelName,
-          temperature,
-          max_output_tokens: maxTokens,
-          system_prompt: systemPrompt,
-          updated_at: new Date().toISOString()
-        };
-
-        const { data: existing } = await supabase.from('ai_settings').select('id').limit(1).maybeSingle();
-
-        if (existing) {
-          await supabase.from('ai_settings').update(payload).eq('id', existing.id);
+        const res = await fetch('/api/admin/ai-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'gemini',
+            model_name: modelName,
+            temperature,
+            max_output_tokens: maxTokens,
+            system_prompt: systemPrompt,
+            tenantId: currentTenantId || undefined,
+            userId: currentUserId || undefined,
+          }),
+        });
+        const resData = await res.json();
+        if (resData.success) {
+          showToast('Configurações de IA salvas no Supabase com sucesso!');
         } else {
-          await supabase.from('ai_settings').insert([payload]);
+          throw new Error(resData.error || 'Falha ao salvar no Supabase');
         }
-        showToast('Configurações de IA salvas no Supabase com sucesso!');
       } else {
         showToast('Prompt e configurações salvas (armazenamento local)!');
       }
@@ -309,14 +326,22 @@ export default function IAConfigPage() {
       localStorage.setItem('vetpro_gemini_key', apiKey);
 
       if (isSupabaseConfigured()) {
-        const supabase = getSupabaseClient();
-        const { data: existing } = await supabase.from('ai_settings').select('id').limit(1).maybeSingle();
-        if (existing) {
-          await supabase.from('ai_settings').update({ api_key: apiKey }).eq('id', existing.id);
+        const res = await fetch('/api/admin/ai-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'gemini',
+            api_key: apiKey,
+            tenantId: currentTenantId || undefined,
+            userId: currentUserId || undefined,
+          }),
+        });
+        const resData = await res.json();
+        if (resData.success) {
+          showToast('Chave de API salva no Supabase!');
         } else {
-          await supabase.from('ai_settings').insert([{ provider: 'gemini', api_key: apiKey }]);
+          throw new Error(resData.error || 'Falha ao salvar no banco');
         }
-        showToast('Chave de API salva no Supabase!');
       } else {
         showToast('Chave de API salva localmente!');
       }
@@ -336,8 +361,9 @@ export default function IAConfigPage() {
       return;
     }
 
+    const tempId = `kb-${Date.now()}`;
     const newItem: KnowledgeItem = {
-      id: `kb-${Date.now()}`,
+      id: tempId,
       title: kbTitle.trim(),
       category: kbCategory,
       content: kbContent.trim(),
@@ -350,44 +376,48 @@ export default function IAConfigPage() {
       createdAt: new Date().toISOString()
     };
 
+    let savedItem = newItem;
     const updated = [newItem, ...knowledgeItems];
     setKnowledgeItems(updated);
     localStorage.setItem('vetpro_knowledge_base', JSON.stringify(updated));
 
     if (isSupabaseConfigured()) {
       try {
-        const supabase = getSupabaseClient();
-        const dbPayload: any = {
-          title: kbTitle.trim(),
-          category: kbCategory,
-          content: kbContent.trim(),
-          file_name: attachedFile?.fileName || null,
-          file_size: attachedFile?.fileSize || null,
-          file_type: attachedFile?.fileType || null,
-          file_url: attachedFile?.dataUrl || null,
-          page_count: attachedFile?.pageCount || null,
-          is_active: true
-        };
+        const res = await fetch('/api/admin/knowledge-base', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: kbTitle.trim(),
+            category: kbCategory,
+            content: kbContent.trim(),
+            fileName: attachedFile?.fileName || null,
+            fileSize: attachedFile?.fileSize || null,
+            fileType: attachedFile?.fileType || null,
+            fileUrl: attachedFile?.dataUrl || null,
+            pageCount: attachedFile?.pageCount || null,
+            isActive: true,
+            tenantId: currentTenantId || undefined,
+            userId: currentUserId || undefined,
+          }),
+        });
 
-        const { error } = await supabase.from('knowledge_base').insert([dbPayload]);
-        if (error) {
-          // Se coluna como category/file_name ainda não estiver no cache do schema do Supabase, tenta insert com colunas básicas
-          if (error.code === 'PGRST204' || error.message?.includes('category') || error.message?.includes('schema cache')) {
-            const fallbackPayload: any = {
-              title: kbTitle.trim(),
-              content: kbContent.trim()
+        const resData = await res.json();
+        if (resData.success) {
+          if (resData.item?.id) {
+            savedItem = {
+              ...newItem,
+              id: resData.item.id,
             };
-            const retryRes = await supabase.from('knowledge_base').insert([fallbackPayload]);
-            if (retryRes.error) throw retryRes.error;
-            showToast('Documento RAG adicionado! (Execute o script SQL para sincronizar a coluna category no Supabase).');
-          } else {
-            throw error;
+            const synced = [savedItem, ...knowledgeItems.filter(k => k.id !== tempId)];
+            setKnowledgeItems(synced);
+            localStorage.setItem('vetpro_knowledge_base', JSON.stringify(synced));
           }
-        } else {
           showToast('Documento RAG adicionado ao Supabase com sucesso!');
+        } else {
+          throw new Error(resData.error || 'Falha ao salvar no banco');
         }
       } catch (err: any) {
-        console.error(err);
+        console.warn('[Supabase Fallback RAG]:', err.message);
         showToast(`Salvo localmente (Aviso Supabase: ${err.message})`, 'success');
       }
     } else {
@@ -411,11 +441,18 @@ export default function IAConfigPage() {
 
     if (isSupabaseConfigured() && !id.startsWith('kb-')) {
       try {
-        const supabase = getSupabaseClient();
-        await supabase.from('knowledge_base').delete().eq('id', id);
+        const res = await fetch(`/api/admin/knowledge-base?id=${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+        });
+        const resData = await res.json();
+        if (!resData.success) {
+          const supabase = getSupabaseClient();
+          await supabase.from('knowledge_base').delete().eq('id', id);
+        }
         showToast('Documento removido do Supabase.');
       } catch (err) {
         console.error(err);
+        showToast('Documento removido localmente.');
       }
     } else {
       showToast('Documento removido.');

@@ -94,7 +94,7 @@ export default function TermosDeUsoPage() {
             Deveres do Usuário / Tutor
           </h3>
           <p>
-            O tutor compromete-se a fornecer informações verídicas e atualizadas quanto ao estado de saúde do animal, raça, idade e sintomas observados, e compreende que em situações agudas de risco de morte (urgência/emergência), o animal deve ser imediatamente conduzido a uma unidade hospitalar veterinária 24 horas.
+            O tutor compromete-se a fornecer informações verídicas e atualizadas quanto ao estado de saúde do animal, raça, idade e sinais clínicos observados, e compreende que em situações agudas de risco de morte (urgência/emergência), o animal deve ser imediatamente conduzido a uma unidade hospitalar veterinária 24 horas.
           </p>
         </section>
 

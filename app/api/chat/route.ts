@@ -262,11 +262,11 @@ Regras clínicas e de segurança:
 - Sexo: ${petContext.sex || 'Não informado'}
 - Idade: ${petContext.age || 'Não informada'}
 - Peso: ${petContext.weight || 'Não informado'}
-${petContext.symptoms ? `- Últimos sintomas registrados: ${petContext.symptoms}` : ''}
+${petContext.symptoms ? `- Últimos sinais clínicos registrados: ${petContext.symptoms}` : ''}
 ${petContext.notes ? `- Observações clínicas anteriores: ${petContext.notes}` : ''}
 
 DIRETRIZ CRÍTICA DE CONTEXTO:
-Você JÁ POSSUI todos os dados cadastrais deste pet. NUNCA peça para o tutor digitar o nome, espécie, raça, sexo, idade ou peso novamente! Cumprimente o tutor e o pet pelo nome com acolhimento e foque diretamente na queixa principal, sintomas relatados e orientações de conduta.`;
+Você JÁ POSSUI todos os dados cadastrais deste pet. NUNCA peça para o tutor digitar o nome, espécie, raça, sexo, idade ou peso novamente! Cumprimente o tutor e o pet pelo nome com acolhimento e foque diretamente na queixa principal, sinais clínicos relatados e orientações de conduta.`;
     }
 
     // Injeção de Documentos da Base RAG (combina os passados pelo cliente + os do Supabase)

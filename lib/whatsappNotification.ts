@@ -13,6 +13,8 @@ export interface SendPixOnboardingParams {
   cpf: string;
   planName: string;
   planPrice: number;
+  paymentId?: string;
+  invoiceNumber?: string;
   pixCopiaECola?: string;
   pixQrCodeImage?: string; // base64 data url ou URL http
   paymentUrl?: string;
@@ -219,6 +221,8 @@ export async function sendPixOnboardingWhatsApp(params: SendPixOnboardingParams)
     cpf,
     planName,
     planPrice,
+    paymentId,
+    invoiceNumber,
     pixCopiaECola,
     pixQrCodeImage,
     paymentUrl,
@@ -230,6 +234,7 @@ export async function sendPixOnboardingWhatsApp(params: SendPixOnboardingParams)
   const formattedCpf = (cpf || '').replace(/\D/g, '');
   const formattedPrice = `R$ ${Number(planPrice || 9.90).toFixed(2).replace('.', ',')}`;
   const dueDateStr = dueDate ? new Date(dueDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'Hoje';
+  const invoiceIdDisplay = invoiceNumber || paymentId || '';
 
   let mediaSent = false;
   let mediaError: string | undefined;
@@ -260,14 +265,21 @@ export async function sendPixOnboardingWhatsApp(params: SendPixOnboardingParams)
     `Olá, *${firstName}*! 🐾 Seja muito bem-vindo(a) ao *VetPro Orienta*!`,
     ``,
     `Seu cadastro foi realizado com sucesso para o *Plano ${planName}* (${formattedPrice}/mês).`,
+  ];
+
+  if (invoiceIdDisplay) {
+    messageLines.push(`• *Fatura Asaas Nº:* \`${invoiceIdDisplay}\``);
+  }
+
+  messageLines.push(
     ``,
     `📋 *Sua conta no sistema já foi pré-criada:*`,
     `• *Login (E-mail):* ${email}`,
     `• *Senha inicial:* ${formattedCpf || 'Seu CPF (apenas números)'}`,
     ``,
     `⚡ *PAGAMENTO INSTANTÂNEO VIA PIX:*`,
-    `Para ativar seu acesso imediatamente, utilize o código *Pix Copia e Cola* abaixo:`,
-  ];
+    `Para ativar seu acesso imediatamente, utilize o código *Pix Copia e Cola* abaixo:`
+  );
 
   if (pixCopiaECola) {
     messageLines.push(

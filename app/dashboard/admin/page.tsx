@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Activity, Smartphone, BrainCircuit, Users, TerminalSquare, Zap, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Activity, Smartphone, BrainCircuit, Users, TerminalSquare, Zap, ShieldAlert, CheckCircle2, Package } from 'lucide-react';
 import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
 
 export default function AdminDashboard() {
@@ -50,7 +50,28 @@ export default function AdminDashboard() {
         </div>
 
         {/* Atalhos Rápidos para Administração */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <Link 
+            href="/dashboard/admin/planos"
+            className="p-6 bg-brand-surface border border-brand-border-strong rounded-2xl hover:border-brand-teal/50 transition-all group flex flex-col justify-between"
+          >
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Package className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-brand-text mb-1.5 flex items-center justify-between">
+                <span>Planos & Preços</span>
+                <span className="text-xs text-brand-teal group-hover:translate-x-0.5 transition-transform">→</span>
+              </h3>
+              <p className="text-xs text-brand-text-muted leading-relaxed">
+                Habilite, desabilite, marque como &quot;Em Breve&quot; e edite os valores dos planos comerciais.
+              </p>
+            </div>
+            <div className="mt-4 pt-3 border-t border-brand-border-strong text-[11px] text-purple-400 flex items-center gap-1.5 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Gestão Dinâmica
+            </div>
+          </Link>
+
           <Link 
             href="/dashboard/admin/asaas"
             className="p-6 bg-brand-surface border border-brand-border-strong rounded-2xl hover:border-brand-teal/50 transition-all group flex flex-col justify-between"

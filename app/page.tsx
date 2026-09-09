@@ -6,7 +6,8 @@ import {
   PawPrint, CheckCircle2, Video, Heart, Shield, HelpCircle, 
   MessageCircle, X, Clock, Smartphone, Laptop, Star, Search, FileText, 
   AlertCircle, RefreshCw, Lock, Sparkles, ChevronDown, 
-  ShieldAlert, Stethoscope, HeartPulse, UserCheck, Baby, Activity, Navigation, Building, Download
+  ShieldAlert, Stethoscope, HeartPulse, UserCheck, Baby, Activity, Navigation, Building, Download,
+  XCircle, Ban, ShieldCheck, BrainCircuit, AlertTriangle, Zap, Check
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createAsaasCustomer, createAsaasSubscription, getAsaasConfig } from '@/lib/asaas';
@@ -35,65 +36,199 @@ export default function LandingPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
 
-  const [planPrices] = useState(() => {
-    const cfg = getAsaasConfig();
-    return {
-      essencial: cfg.planEssencialPrice || 9.90,
-      especialista: cfg.planEspecialistaPrice || 29.90,
-    };
-  });
-
-  const plans = [
+  const [dynamicPlans, setDynamicPlans] = useState<any[]>([
     {
       id: "essencial",
       name: "Essencial",
-      desc: "Orientação e triagem técnica rápida com inteligência e suporte",
-      price: planPrices.essencial.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      numericPrice: planPrices.essencial,
+      desc: "Orientação e triagem técnica contínua pelo chat da plataforma VetPro Orienta",
+      price: "9,90",
+      numericPrice: 9.90,
       period: "/mês",
-      highlight: false,
+      billing_cycle: "MONTHLY",
+      comparison_badge: "",
+      is_coming_soon: false,
+      is_popular: false,
       features: [
-        { text: "Orientação e triagem técnica por chat e WhatsApp", strong: false },
-        { text: "Envio de fotos, vídeos e resultados de exames", strong: false },
-        { text: "Respostas e direcionamento ágil", strong: false },
-        { text: "Suporte informativo para o dia a dia", strong: false },
-        { text: "Cancele quando quiser, sem carência", strong: false }
+        { text: "Orientação e triagem técnica pelo chat da plataforma VetPro Orienta", strong: false, hasLock: false },
+        { text: "Envio de fotos e resultados de exames para análise", strong: false, hasLock: false },
+        { text: "Respostas ágeis e direcionamento estruturado", strong: false, hasLock: false },
+        { text: "Suporte informativo contínuo para o dia a dia", strong: false, hasLock: false },
+        { text: "Cancele quando quiser, sem carência ou fidelidade", strong: false, hasLock: false }
+      ]
+    },
+    {
+      id: "anual-promocional",
+      name: "Anual Essencial",
+      desc: "Acesso completo o ano inteiro por apenas R$ 4,99/mês (Economize 50% em relação ao mensal de R$ 9,90)",
+      price: "59,90",
+      numericPrice: 59.90,
+      period: "/ano",
+      billing_cycle: "YEARLY",
+      comparison_badge: "Mais Vendido — Economize 50% vs R$ 9,90/mês",
+      is_coming_soon: false,
+      is_popular: true,
+      features: [
+        { text: "Tudo incluído do plano Essencial o ano inteiro", strong: true, hasLock: false },
+        { text: "Orientação e triagem técnica contínua 365 dias", strong: false, hasLock: false },
+        { text: "Envio ilimitado de fotos e exames para triagem", strong: false, hasLock: false },
+        { text: "Equivalente a apenas R$ 4,99/mês (Cobrado R$ 59,90/ano)", strong: true, hasLock: false },
+        { text: "Economia de R$ 58,90 em relação ao plano mensal de R$ 9,90", strong: true, hasLock: false },
+        { text: "Garantia e renovação automática anual sem burocracia", strong: false, hasLock: false }
       ]
     },
     {
       id: "especialista",
       name: "Especialista",
-      desc: "Atendimento humano com médico-veterinário dedicado",
-      price: planPrices.especialista.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      numericPrice: planPrices.especialista,
+      desc: "Atendimento com médico-veterinário especialista dedicado",
+      price: "29,90",
+      numericPrice: 29.90,
       period: "/mês",
-      highlight: true,
+      billing_cycle: "MONTHLY",
+      comparison_badge: "",
+      is_coming_soon: true, // Requisito: Exibido visualmente porém desabilitado e marcado como EM BREVE
+      is_popular: false,
       features: [
         { text: "Tudo incluído do plano Essencial", strong: false, hasLock: false },
-        { text: "Atendimento humano e especializado com médico-veterinário", strong: true, hasLock: true },
+        { text: "Atendimento com médico-veterinário especialista", strong: true, hasLock: true },
         { text: "Avaliação cuidadosa de exames e histórico clínico", strong: true, hasLock: false },
         { text: "Prioridade máxima de resposta e acompanhamento", strong: false, hasLock: false },
         { text: "Cancele quando quiser, sem fidelidade", strong: false, hasLock: false }
       ]
     }
-  ];
+  ]);
+
+  // Carrega planos da API e sincroniza na Home pública garantindo estritamente os 3 planos oficiais (Essencial, Anual, Especialista)
+  useEffect(() => {
+    async function loadPlans() {
+      try {
+        const res = await fetch('/api/admin/plans?active=true');
+        const data = await res.json();
+        if (data.plans && Array.isArray(data.plans) && data.plans.length > 0) {
+          const defaultFeaturesMap: Record<string, any[]> = {
+            essencial: [
+              { text: "Orientação e triagem técnica pelo chat da plataforma VetPro Orienta", strong: false, hasLock: false },
+              { text: "Envio de fotos e resultados de exames para análise", strong: false, hasLock: false },
+              { text: "Respostas ágeis e direcionamento estruturado", strong: false, hasLock: false },
+              { text: "Suporte informativo contínuo para o dia a dia", strong: false, hasLock: false },
+              { text: "Cancele quando quiser, sem carência ou fidelidade", strong: false, hasLock: false }
+            ],
+            'anual-promocional': [
+              { text: "Tudo incluído do plano Essencial o ano inteiro", strong: true, hasLock: false },
+              { text: "Orientação e triagem técnica contínua 365 dias", strong: false, hasLock: false },
+              { text: "Envio ilimitado de fotos e exames para triagem", strong: false, hasLock: false },
+              { text: "Equivalente a apenas R$ 4,99/mês (Cobrado R$ 59,90/ano)", strong: true, hasLock: false },
+              { text: "Economia de R$ 58,90 em relação ao plano mensal de R$ 9,90", strong: true, hasLock: false },
+              { text: "Garantia e renovação automática anual sem burocracia", strong: false, hasLock: false }
+            ],
+            especialista: [
+              { text: "Tudo incluído do plano Essencial", strong: false, hasLock: false },
+              { text: "Atendimento com médico-veterinário especialista", strong: true, hasLock: true },
+              { text: "Avaliação cuidadosa de exames e histórico clínico", strong: true, hasLock: false },
+              { text: "Prioridade máxima de resposta e acompanhamento", strong: false, hasLock: false },
+              { text: "Cancele quando quiser, sem fidelidade", strong: false, hasLock: false }
+            ]
+          };
+
+          // Mapeia estritamente os 3 slots canônicos da Home sem duplicatas
+          const slotMap: Record<'essencial' | 'anual-promocional' | 'especialista', any | null> = {
+            'essencial': null,
+            'anual-promocional': null,
+            'especialista': null
+          };
+
+          for (const p of data.plans) {
+            if (p.is_active === false) continue;
+            const slug = (p.slug || p.id || '').toLowerCase();
+            const name = (p.name || '').toLowerCase();
+
+            if (!slotMap['anual-promocional'] && (slug.includes('anual') || name.includes('anual') || p.billing_cycle === 'YEARLY' || Number(p.price_annual) === 59.90 || Number(p.price_monthly) === 4.99)) {
+              slotMap['anual-promocional'] = p;
+            } else if (!slotMap['especialista'] && (slug.includes('especialista') || name.includes('especialista') || Number(p.price_monthly) === 29.90)) {
+              slotMap['especialista'] = p;
+            } else if (!slotMap['essencial'] && (slug.includes('essencial') || name.includes('essencial') || Number(p.price_monthly) === 9.90)) {
+              slotMap['essencial'] = p;
+            }
+          }
+
+          const resolvedPlans: any[] = [];
+
+          // 1. Essencial
+          const rawEssencial = slotMap['essencial'];
+          resolvedPlans.push({
+            id: 'essencial',
+            db_id: rawEssencial?.db_id || rawEssencial?.id || 'essencial',
+            name: rawEssencial?.name || 'Essencial',
+            desc: rawEssencial?.description || 'Orientação e triagem técnica pelo chat da plataforma VetPro Orienta',
+            price: (Number(rawEssencial?.price_monthly) || 9.90).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            numericPrice: Number(rawEssencial?.price_monthly) || 9.90,
+            period: '/mês',
+            billing_cycle: 'MONTHLY',
+            comparison_badge: '',
+            is_coming_soon: false,
+            is_popular: false,
+            features: (Array.isArray(rawEssencial?.features) && rawEssencial.features.length > 0) ? rawEssencial.features : defaultFeaturesMap.essencial
+          });
+
+          // 2. Anual Essencial
+          const rawAnual = slotMap['anual-promocional'];
+          const anualPrice = Number(rawAnual?.price_annual) || 59.90;
+          resolvedPlans.push({
+            id: 'anual-promocional',
+            db_id: rawAnual?.db_id || rawAnual?.id || 'anual-promocional',
+            name: rawAnual?.name || 'Anual Essencial',
+            desc: rawAnual?.description || 'Acesso completo o ano inteiro por apenas R$ 4,99/mês (Economize 50% em relação ao mensal de R$ 9,90)',
+            price: anualPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            numericPrice: anualPrice,
+            period: '/ano',
+            billing_cycle: 'YEARLY',
+            comparison_badge: rawAnual?.comparison_badge || 'Mais Vendido — Economize 50% vs R$ 9,90/mês',
+            is_coming_soon: false,
+            is_popular: true,
+            features: (Array.isArray(rawAnual?.features) && rawAnual.features.length > 0) ? rawAnual.features : defaultFeaturesMap['anual-promocional']
+          });
+
+          // 3. Especialista
+          const rawEsp = slotMap['especialista'];
+          resolvedPlans.push({
+            id: 'especialista',
+            db_id: rawEsp?.db_id || rawEsp?.id || 'especialista',
+            name: rawEsp?.name || 'Especialista',
+            desc: rawEsp?.description || 'Atendimento com médico-veterinário especialista dedicado',
+            price: (Number(rawEsp?.price_monthly) || 29.90).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            numericPrice: Number(rawEsp?.price_monthly) || 29.90,
+            period: '/mês',
+            billing_cycle: 'MONTHLY',
+            comparison_badge: '',
+            is_coming_soon: rawEsp ? (rawEsp.is_coming_soon !== false) : true,
+            is_popular: false,
+            features: (Array.isArray(rawEsp?.features) && rawEsp.features.length > 0) ? rawEsp.features : defaultFeaturesMap.especialista
+          });
+
+          setDynamicPlans(resolvedPlans);
+        }
+      } catch (e) {
+        console.warn('Usando planos padrão em fallback:', e);
+      }
+    }
+    loadPlans();
+  }, []);
 
   const faqs = [
     {
-      question: "A orientação técnica por IA substitui uma consulta com médico-veterinário?",
-      answer: "Não. A orientação técnica e os recursos de inteligência artificial são ferramentas de triagem, apoio informativo e acolhimento rápido para dúvidas cotidianas. Para uma orientação mais precisa, diagnóstico clínico definitivo ou prescrição de medicamentos, você deve procurar um médico-veterinário de sua confiança ou assinar o nosso Plano Especialista com médico-veterinário dedicado. A IA nunca substitui a avaliação física presencial de um profissional especializado."
+      question: "A orientação técnica por inteligência artificial substitui uma consulta com médico-veterinário?",
+      answer: "Não. A orientação técnica e os recursos de inteligência artificial são ferramentas de triagem, apoio informativo e acolhimento rápido para dúvidas cotidianas. Para uma orientação mais precisa, diagnóstico clínico definitivo ou prescrição de medicamentos, você deve procurar um médico-veterinário presencial de sua confiança ou assinar o nosso Plano Especialista (em breve). A inteligência nunca substitui a avaliação física presencial de um profissional habilitado."
     },
     {
       question: "Como funciona o atendimento no Plano Especialista?",
-      answer: "No Plano Especialista, você tem acesso ao atendimento humano com médicos-veterinários. Você pode relatar sintomas, enviar fotos, vídeos do pet e laudos de exames laboratoriais ou de imagem. O profissional analisa o caso individualmente, oferecendo um direcionamento aprofundado, orientações de conduta e recomendações personalizadas."
+      answer: "No Plano Especialista (em breve), você terá acesso ao atendimento com médicos-veterinários. Você poderá relatar os sinais clínicos, enviar fotos do pet e laudos de exames laboratoriais ou de imagem. O profissional analisará o caso individualmente, oferecendo um direcionamento aprofundado, orientações de conduta e recomendações personalizadas."
     },
     {
-      question: "O que é a dobra de orientação da VetPro Orienta?",
-      answer: "É um serviço de triagem e suporte contínuo para tutores de cães e gatos. Ajudamos a identificar se uma situação requer atendimento hospitalar imediato, tiramos dúvidas sobre vacinação, alimentação, cuidados com filhotes ou pets idosos, prevenindo a automedicação indevida."
+      question: "O que é o serviço de teleorientação da VetPro Orienta?",
+      answer: "É um serviço de triagem e orientação contínua para tutores de cães e gatos, realizado 100% dentro da plataforma digital VetPro Orienta. Ajudamos a identificar se os sinais clínicos requerem atendimento hospitalar presencial, tiramos dúvidas sobre vacinação, alimentação, cuidados com filhotes ou pets idosos, prevenindo a automedicação indevida."
     },
     {
-      question: "Posso enviar fotos, vídeos e resultados de exames?",
-      answer: "Sim! Você pode anexar fotos de lesões ou alterações, vídeos mostrando o comportamento do animal e PDFs ou fotos de exames de sangue e ultrassonografia para enriquecer a orientação."
+      question: "Posso enviar fotos e resultados de exames?",
+      answer: "Sim! Você pode anexar fotos de lesões ou alterações e PDFs ou imagens de exames de sangue e ultrassonografia diretamente no chat da plataforma para enriquecer a anamnese."
     },
     {
       question: "Como funciona a assinatura e o pagamento?",
@@ -101,7 +236,7 @@ export default function LandingPage() {
     },
     {
       question: "O que devo fazer em casos de emergência grave?",
-      answer: "Se o seu pet apresentar sinais graves (dificuldade respiratória aguda, convulsões ativas, sangramento incontrolável, intoxicação recente por venenos ou traumas graves por atropelamento), dirija-se imediatamente a um hospital veterinário 24 horas de sua confiança para atendimento emergencial presencial."
+      answer: "Se o seu pet apresentar sinais clínicos graves (dificuldade respiratória aguda, convulsões ativas, sangramento incontrolável, intoxicação recente ou traumas graves por atropelamento), dirija-se imediatamente a um hospital veterinário 24 horas presencial para atendimento emergencial imediato."
     }
   ];
 
@@ -114,12 +249,12 @@ export default function LandingPage() {
     {
       icon: Activity,
       title: "Pets Idosos ou com Condições Crônicas",
-      description: "Acompanhamento de exames de rotina, monitoramento de sinais sutis de dor, dúvidas sobre rotina e qualidade de vida na terceira idade."
+      description: "Acompanhamento de exames de rotina, monitoramento de sinais clínicos sutis de dor, dúvidas sobre rotina e qualidade de vida na terceira idade."
     },
     {
       icon: Clock,
       title: "Rotina Corrida sem Tempo a Perder",
-      description: "Orientação rápida na palma da mão para não perder tempo com desinformação na internet nem deslocamentos desnecessários para dúvidas simples."
+      description: "Orientação rápida na palma da mão dentro da plataforma VetPro Orienta para não perder tempo com desinformação na internet nem deslocamentos desnecessários para dúvidas simples."
     },
     {
       icon: ShieldAlert,
@@ -129,16 +264,20 @@ export default function LandingPage() {
     {
       icon: Stethoscope,
       title: "Triagem Confiável e Acolhedora",
-      description: "Entenda se o sintoma é motivo de urgência imediata ou se pode ser monitorado com segurança até a próxima consulta presencial."
+      description: "Entenda se o sinal clínico é motivo de urgência imediata ou se pode ser monitorado com segurança até a próxima consulta presencial."
     },
     {
       icon: HeartPulse,
       title: "Quem Busca o Melhor para o Pet",
-      description: "Acesso a suporte atencioso com opção de plano com especialista humano para uma avaliação técnica ainda mais completa."
+      description: "Acesso a teleorientação contínua com opção de plano com especialista humano (em breve) para uma avaliação técnica ainda mais completa."
     }
   ];
 
   const handleOpenModal = (planId: string) => {
+    const plan = dynamicPlans.find(p => p.id === planId);
+    if (plan && plan.is_coming_soon) {
+      return; // Plano em breve não abre contratação
+    }
     setSelectedPlan(planId);
     setSubmitError(null);
     setIsModalOpen(true);
@@ -181,7 +320,7 @@ export default function LandingPage() {
       return;
     }
 
-    const planObj = plans.find(p => p.id === selectedPlan) || plans[0];
+    const planObj = dynamicPlans.find(p => p.id === selectedPlan) || dynamicPlans[0];
     setIsSubmitting(true);
 
     try {
@@ -204,6 +343,7 @@ export default function LandingPage() {
           planId: planObj.id,
           planName: planObj.name,
           planPrice: planObj.numericPrice,
+          billingCycle: planObj.billing_cycle || (planObj.id === 'anual-promocional' || planObj.id === 'anual' ? 'YEARLY' : 'MONTHLY'),
           dueDaysOffset: localAsaasConfig.dueDaysOffset !== undefined ? localAsaasConfig.dueDaysOffset : 1,
           asaasConfig: {
             apiKey: localAsaasConfig.apiKey,
@@ -308,24 +448,7 @@ export default function LandingPage() {
             <span>VetPro <b className="text-brand-teal">Orienta</b></span>
           </Link>
           
-          <nav className="hidden md:flex items-center gap-8 text-[14.5px] font-medium text-brand-text-muted">
-            <a href="#como-funciona" className="hover:text-brand-text transition-colors">Como funciona</a>
-            <a href="#para-quem" className="hover:text-brand-text transition-colors">Para quem é</a>
-            <a href="#parceiros" className="hover:text-brand-text transition-colors">Parceiros & GPS</a>
-            <a href="#planos" className="hover:text-brand-text transition-colors">Planos</a>
-            <a href="#faq" className="hover:text-brand-text transition-colors">Dúvidas</a>
-          </nav>
-
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={triggerPWAInstallModal}
-              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full bg-brand-teal/15 hover:bg-brand-teal/25 border border-brand-teal/30 text-brand-teal transition-all shadow-sm active:scale-95"
-              title="Instalar App no iPhone, Mac ou Android"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Instalar App</span>
-            </button>
             <Link 
               href="/login"
               className="text-xs font-semibold px-4 py-2 rounded-full border border-brand-border-strong hover:bg-brand-surface text-brand-text transition-colors"
@@ -358,7 +481,7 @@ export default function LandingPage() {
             </h1>
 
             <p className="text-[17px] text-brand-text-muted leading-[1.65] mb-8 max-w-[560px]">
-              Tire dúvidas do dia a dia, entenda sintomas e receba a melhor recomendação para a saúde do seu cão ou gato, direto no WhatsApp ou no painel.
+              Tire dúvidas do dia a dia, entenda os sinais clínicos e receba a melhor recomendação para a saúde do seu cão ou gato, diretamente na plataforma VetPro Orienta.
             </p>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto mb-8">
@@ -380,7 +503,7 @@ export default function LandingPage() {
             <div className="p-3.5 rounded-2xl bg-brand-surface border border-brand-border-strong flex items-start gap-2.5 max-w-[560px] text-xs text-brand-text-muted mb-8">
               <Stethoscope className="w-4 h-4 text-brand-teal shrink-0 mt-0.5" />
               <p className="text-[12px] leading-relaxed">
-                <strong className="text-brand-text">Aviso ético importante:</strong> A orientação por IA ou triagem não substitui a consulta clínica presencial. Para uma orientação mais precisa, consulte sempre seu médico-veterinário de confiança ou assine nosso plano com especialista.
+                <strong className="text-brand-text">Aviso ético importante:</strong> A orientação por inteligência artificial é uma ferramenta de apoio preliminar e não substitui a consulta clínica presencial. Para uma avaliação diagnóstica presencial, consulte sempre seu médico-veterinário de confiança.
               </p>
             </div>
 
@@ -420,8 +543,8 @@ export default function LandingPage() {
                       🩺
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-brand-text">Equipe VetPro Ativa</h4>
-                      <p className="text-[11px] text-brand-text-muted">Triagem clínica e suporte humanizado</p>
+                      <h4 className="text-xs font-bold text-brand-text">VetPro Orienta</h4>
+                      <p className="text-[11px] text-brand-text-muted">Triagem clínica e teleorientação técnica inteligente</p>
                     </div>
                   </div>
                 </div>
@@ -435,9 +558,9 @@ export default function LandingPage() {
       {/* Como Funciona */}
       <section id="como-funciona" className="py-20 bg-brand-surface/40 border-y border-brand-border-strong">
         <div className="max-w-[1140px] mx-auto px-6">
-          <div className="text-center max-w-[620px] mx-auto mb-14">
+          <div className="text-center max-w-[680px] mx-auto mb-14">
             <h2 className="font-display text-[30px] font-bold tracking-tight mb-3">Como Funciona a VetPro Orienta?</h2>
-            <p className="text-brand-text-muted text-[15px]">Simples, rápido e no canal que você já usa todo dia.</p>
+            <p className="text-brand-text-muted text-[15px]">Simples, rápido e 100% digital dentro da plataforma VetPro Orienta.</p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
@@ -455,9 +578,9 @@ export default function LandingPage() {
               <div className="w-10 h-10 rounded-xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-display font-bold text-base mb-4">
                 2
               </div>
-              <h3 className="font-display font-bold text-base mb-2">Descreva a Situação</h3>
+              <h3 className="font-display font-bold text-base mb-2">Anamnese Ativa & Sinais Clínicos</h3>
               <p className="text-xs text-brand-text-muted leading-relaxed">
-                Envie suas dúvidas, fotos, vídeos de comportamento ou resultados de exames pelo chat do sistema ou WhatsApp.
+                O tutor conta o que está acontecendo com o pet, informa os sinais clínicos e o histórico, pode enviar resultados de exames e a inteligência conduz uma conversa ativa, fazendo perguntas direcionadas para complementar a anamnese e afunilar as informações até uma orientação mais clara e direcionada.
               </p>
             </div>
 
@@ -465,10 +588,287 @@ export default function LandingPage() {
               <div className="w-10 h-10 rounded-xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-display font-bold text-base mb-4">
                 3
               </div>
-              <h3 className="font-display font-bold text-base mb-2">Receba a Orientação</h3>
+              <h3 className="font-display font-bold text-base mb-2">Base Médica-Veterinária Estruturada</h3>
               <p className="text-xs text-brand-text-muted leading-relaxed">
-                Nossa IA e equipe veterinária especializada avaliam o caso e fornecem o direcionamento ideal para o bem-estar do seu pet.
+                Construída a partir de conhecimento médico-veterinário, base literária estruturada e conteúdos revisados dentro da medicina veterinária, com participação de médico-veterinário especializado na organização desse conhecimento, formando uma estrutura de teleorientação com perguntas e respostas direcionadas.
               </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Dobra: VetPro Orienta vs Busca no Google */}
+      <section id="vantagens" className="py-24 relative overflow-hidden bg-brand-surface/20 border-b border-brand-border-strong">
+        <div className="max-w-[1140px] mx-auto px-6">
+          <div className="text-center max-w-[760px] mx-auto mb-16">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-wider mb-3.5 shadow-sm">
+              <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Comparativo Direto
+            </div>
+            <h2 className="font-display text-[32px] md:text-[40px] font-bold tracking-tight mb-4">
+              VetPro Orienta <span className="text-brand-text-muted font-normal">vs.</span> Busca no Google
+            </h2>
+            <p className="text-brand-text-muted text-[15px] md:text-[16px] leading-relaxed">
+              Pesquisar sinais clínicos soltos em buscadores genéricos expõe o tutor a receitas caseiras perigosas, diagnósticos alarmistas e perda de tempo crítico. Entenda as diferenças fundamentais:
+            </p>
+          </div>
+
+          {/* Cards Lado a Lado */}
+          <div className="grid lg:grid-cols-2 gap-8 mb-12">
+            
+            {/* LADO 1: Busca Genérica no Google */}
+            <div className="rounded-[24px] p-7 md:p-8 bg-brand-surface/70 border border-red-500/30 shadow-xl shadow-red-500/5 flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 rounded-full blur-3xl pointer-events-none" />
+              
+              <div>
+                {/* Header do Card Google */}
+                <div className="flex items-center justify-between gap-3 mb-6 pb-4 border-b border-brand-border-strong">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-red-500/15 text-red-400 flex items-center justify-center font-bold">
+                      <Search className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-lg text-brand-text flex items-center gap-2">
+                        Busca Genérica no Google
+                      </h3>
+                      <p className="text-[11px] text-red-400 font-medium">Desinformação, automedicação e pânico</p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 text-[10px] font-extrabold uppercase tracking-wider">
+                    Alto Risco
+                  </span>
+                </div>
+
+                {/* Mockup Visual de Busca do Google */}
+                <div className="rounded-xl bg-brand-bg/80 border border-brand-border-strong p-3.5 mb-6 text-xs font-mono space-y-2.5">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-surface border border-brand-border-strong text-brand-text-muted text-[11px]">
+                    <Search className="w-3.5 h-3.5 text-brand-text-muted shrink-0" />
+                    <span className="truncate text-brand-text">&quot;meu cachorro vomitou amarelo e está tremendo&quot;</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-[11px] leading-snug">
+                    <div className="flex items-center gap-1.5 font-bold text-red-400 mb-1">
+                      <AlertTriangle className="w-3 h-3" /> Fórum Aberto / Receita Caseira
+                    </div>
+                    &quot;Pode ser parvovirose fatal ou simples gastrite. Dê 1 colher de chá de água oxigenada ou óleo vegetal...&quot; 
+                    <span className="block mt-1 text-[10px] text-red-400/80 font-sans italic font-normal">⚠️ Receitas perigosas que causam gastrite severa e intoxicação.</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-brand-surface-2/60 border border-brand-border-strong text-brand-text-muted text-[11px] leading-snug">
+                    <div className="font-semibold text-brand-text mb-0.5">Artigo de Blog Genérico:</div>
+                    &quot;40 possíveis causas de tremores em cães (sem saber peso, raça, idade ou exame físico).&quot;
+                  </div>
+                </div>
+
+                {/* Lista de Desvantagens */}
+                <ul className="space-y-3.5 text-xs text-brand-text-muted">
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <XCircle className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Zero Contexto Clínico do Animal:</strong> O Google não sabe o peso exato, espécie (cão ou gato), raça, idade ou histórico de vacinas e alergias.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <XCircle className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Risco Fatal de Automedicação:</strong> Medicamentos humanos comuns (como paracetamol, diclofenaco ou dipirona em doses erradas) são letais para pets.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <XCircle className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Alarmismo & Pânico Psicológico:</strong> Apresenta diagnósticos catastróficos que desesperam a família sem nenhuma conduta prática.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <XCircle className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Busca Estática e Passiva:</strong> Ninguém faz perguntas de retorno para checar se a gengiva está branca, se há febre ou dor abdominal.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <XCircle className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Perda de Tempo Fatal:</strong> Em casos de torção gástrica, obstrução ou choque, horas gastas na web reduzem a chance de sobrevivência.
+                    </div>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* LADO 2: VetPro Orienta */}
+            <div className="rounded-[24px] p-7 md:p-8 bg-gradient-to-b from-brand-surface to-brand-surface-2 border border-brand-teal/40 shadow-2xl shadow-brand-teal/10 flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-brand-teal/10 rounded-full blur-3xl pointer-events-none" />
+              
+              <div>
+                {/* Header do Card VetPro */}
+                <div className="flex items-center justify-between gap-3 mb-6 pb-4 border-b border-brand-border-strong">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-brand-teal/20 text-brand-teal flex items-center justify-center font-bold">
+                      <Stethoscope className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-lg text-brand-text flex items-center gap-2">
+                        Teleorientação VetPro Orienta
+                      </h3>
+                      <p className="text-[11px] text-brand-teal font-medium">Anamnese ativa, base veterinária e ética</p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-brand-teal/20 text-brand-teal border border-brand-teal/40 text-[10px] font-extrabold uppercase tracking-wider">
+                    Recomendado
+                  </span>
+                </div>
+
+                {/* Mockup Visual de Chat VetPro */}
+                <div className="rounded-xl bg-brand-bg/90 border border-brand-teal/30 p-3.5 mb-6 text-xs space-y-2.5">
+                  <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-brand-teal/10 border border-brand-teal/20 text-brand-teal text-[11px] font-semibold">
+                    <span className="flex items-center gap-1.5">
+                      <PawPrint className="w-3.5 h-3.5" /> Prontuário: Thor • Golden Retriever
+                    </span>
+                    <span className="text-[10px] text-brand-text-muted">3 anos • 32 kg</span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-brand-surface border border-brand-border-strong text-brand-text text-[11px] leading-relaxed">
+                    <div className="flex items-center gap-1.5 font-bold text-brand-teal mb-1">
+                      <BrainCircuit className="w-3.5 h-3.5" /> Anamnese Ativa & Complementar:
+                    </div>
+                    &quot;Identifiquei o vômito amarelado no Thor (32kg). Como ele é jovem e de porte grande, preciso saber: 
+                    <br /><b>1.</b> Ele teve acesso a lixo, ossos ou plantas tóxicas?
+                    <br /><b>2.</b> A gengiva dele está rosada ou pálida/esbranquiçada?
+                    <br /><b>3.</b> O abdômen parece rígido ou com dor ao toque?&quot;
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-brand-teal font-medium px-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-brand-teal shrink-0" />
+                    Base médica estruturada • Alerta ético de atendimento presencial imediato
+                  </div>
+                </div>
+
+                {/* Lista de Vantagens */}
+                <ul className="space-y-3.5 text-xs text-brand-text-muted">
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Anamnese Ativa & Direcionada:</strong> A IA conduz uma conversa interativa fazendo perguntas direcionadas para afunilar a queixa e complementar a avaliação.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Prontuário Individualizado:</strong> Todas as orientações respeitam espécie, raça, idade, peso exato e histórico de saúde cadastrado no perfil do seu pet.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Suporte a Envio de Exames & Fotos:</strong> Permite anexar laudos de exames laboratoriais, de imagem e fotos de sinais clínicos para enriquecer a triagem.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">Base Médica-Veterinária Estruturada:</strong> Conteúdos revisados dentro da medicina veterinária com foco estrito em segurança e prevenção de automedicação.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <strong className="text-brand-text font-semibold">GPS para Hospitais 24h & Pronto-Socorro:</strong> Em caso de urgência, fornece a rota mais rápida no Google Maps e contato para checar plantão.
+                    </div>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Tabela Resumo Rápida de Comparação */}
+          <div className="bg-brand-surface rounded-[20px] border border-brand-border-strong p-6 md:p-8 overflow-x-auto">
+            <div className="flex items-center gap-2 mb-6">
+              <Sparkles className="w-5 h-5 text-brand-teal" />
+              <h3 className="font-display font-bold text-base md:text-lg text-brand-text">
+                Quadro Comparativo: Critérios de Decisão Clínica
+              </h3>
+            </div>
+
+            <div className="min-w-[620px] divide-y divide-brand-border-strong text-xs">
+              <div className="grid grid-cols-12 pb-3 font-bold text-brand-text-muted uppercase tracking-wider text-[11px]">
+                <div className="col-span-4">Critério de Avaliação</div>
+                <div className="col-span-4 text-red-400 flex items-center gap-1.5">
+                  <XCircle className="w-3.5 h-3.5" /> Busca no Google
+                </div>
+                <div className="col-span-4 text-brand-teal flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> VetPro Orienta
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 py-3.5 items-center">
+                <div className="col-span-4 font-semibold text-brand-text">Contexto e Prontuário do Pet</div>
+                <div className="col-span-4 text-brand-text-muted">Nenhum. Respostas genéricas para a web inteira.</div>
+                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                  <Check className="w-4 h-4 shrink-0" /> Prontuário com peso, raça, idade e histórico.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 py-3.5 items-center">
+                <div className="col-span-4 font-semibold text-brand-text">Interatividade na Anamnese</div>
+                <div className="col-span-4 text-brand-text-muted">Passiva. Tutor lê dezenas de links divergentes.</div>
+                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                  <Check className="w-4 h-4 shrink-0" /> Conversa ativa com perguntas direcionadas.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 py-3.5 items-center">
+                <div className="col-span-4 font-semibold text-brand-text">Leitura de Exames e Fotos</div>
+                <div className="col-span-4 text-brand-text-muted">Não analisa arquivos ou laudos clínicos.</div>
+                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                  <Check className="w-4 h-4 shrink-0" /> Interpretação de laudos e fotos para triagem.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 py-3.5 items-center">
+                <div className="col-span-4 font-semibold text-brand-text">Segurança contra Automedicação</div>
+                <div className="col-span-4 text-brand-text-muted">Alto risco de receitas caseiras e doses tóxicas.</div>
+                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                  <Check className="w-4 h-4 shrink-0" /> Bloqueio de automedicação e alerta ético.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 py-3.5 items-center">
+                <div className="col-span-4 font-semibold text-brand-text">Encaminhamento para Emergências</div>
+                <div className="col-span-4 text-brand-text-muted">Anúncios genéricos sem checagem de proximidade.</div>
+                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                  <Check className="w-4 h-4 shrink-0" /> Hospitais 24h com rotas GPS no Google Maps.
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-brand-border-strong flex flex-col sm:flex-row items-center justify-between gap-4">
+              <p className="text-xs text-brand-text-muted text-center sm:text-left">
+                Proteja quem você mais ama com orientação séria e responsável, por apenas <strong className="text-brand-text">R$ 9,90/mês</strong>.
+              </p>
+              <a
+                href="#planos"
+                className="px-6 py-3 rounded-full bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-all shadow-md shrink-0 flex items-center gap-2"
+              >
+                <span>Assinar Plano com Segurança</span>
+                <PawPrint className="w-3.5 h-3.5" />
+              </a>
             </div>
           </div>
         </div>
@@ -537,7 +937,7 @@ export default function LandingPage() {
               </div>
               <h3 className="font-display font-bold text-lg mb-2">Hospitais & Pronto-Socorro 24h</h3>
               <p className="text-brand-text-muted text-sm leading-relaxed">
-                Acesso imediato a hospitais com UTI veterinária de plantão aberto agora, rotas rápidas no Google Maps e contato telefônico direto.
+                Localização de hospitais e pronto-socorros veterinários 24 horas próximos da sua região, com direcionamento para a melhor rota pelo Google Maps e disponibilização do contato telefônico do estabelecimento para checagem de plantão.
               </p>
             </div>
 
@@ -557,7 +957,7 @@ export default function LandingPage() {
               </div>
               <h3 className="font-display font-bold text-lg mb-2">Farmácias & Pet Shops</h3>
               <p className="text-brand-text-muted text-sm leading-relaxed">
-                Encontre farmácias de manipulação veterinária e pet shops na sua proximidade com rotas e canais diretos de WhatsApp.
+                Encontre farmácias de manipulação veterinária e pet shops na sua proximidade com rotas e canais diretos de contato.
               </p>
             </div>
           </div>
@@ -569,53 +969,85 @@ export default function LandingPage() {
         <div className="max-w-[1140px] mx-auto px-6">
           <div className="text-center max-w-[620px] mx-auto mb-16">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-accent/15 text-brand-accent-2 text-xs font-bold uppercase tracking-wider mb-3">
-              Planos Disponíveis
+              Planos Transparentes
             </div>
             <h2 className="font-display text-[32px] md:text-[38px] font-bold tracking-tight mb-3">
-              Planos Transparentes para Todo Tutor
+              Orientação Veterinária Acessível
             </h2>
             <p className="text-brand-text-muted text-[15px]">
               Assine com facilidade, sem contratos longos ou multas. Gestão de cobrança automática e segura pelo banco Asaas.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            {plans.map((plan) => (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            {dynamicPlans.map((plan) => (
               <div 
                 key={plan.id}
-                className={`relative rounded-[24px] p-8 border flex flex-col justify-between transition-all ${
-                  plan.highlight 
-                    ? 'bg-gradient-to-b from-brand-surface to-brand-surface-2 border-brand-accent shadow-2xl shadow-brand-accent/10' 
-                    : 'bg-brand-surface border-brand-border-strong'
+                className={`relative rounded-[24px] p-7 md:p-8 border flex flex-col justify-between transition-all ${
+                  plan.is_coming_soon
+                    ? 'bg-brand-surface/80 border-amber-500/30 shadow-lg shadow-amber-500/5'
+                    : plan.is_popular 
+                      ? 'bg-gradient-to-b from-brand-surface to-brand-surface-2 border-brand-accent shadow-2xl shadow-brand-accent/10 ring-1 ring-brand-accent/30' 
+                      : 'bg-brand-surface border-brand-border-strong'
                 }`}
               >
-                {plan.highlight && (
-                  <div className="absolute -top-3.5 right-6 bg-brand-accent text-brand-accent-ink text-[11px] font-bold uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md">
-                    Mais Escolhido
-                  </div>
-                )}
+                {/* Badges no topo */}
+                <div className="absolute -top-3.5 right-6 flex items-center gap-2">
+                  {plan.is_coming_soon && (
+                    <div className="bg-amber-500 text-brand-bg text-[11px] font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      EM BREVE
+                    </div>
+                  )}
+                  {plan.is_popular && !plan.is_coming_soon && (
+                    <div className="bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink text-[11px] font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      Mais Vendido
+                    </div>
+                  )}
+                </div>
 
                 <div>
-                  <h3 className="font-display text-xl font-bold mb-1">{plan.name}</h3>
-                  <p className="text-xs text-brand-text-muted mb-6">{plan.desc}</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="font-display text-xl font-bold">{plan.name}</h3>
+                  </div>
+                  <p className="text-xs text-brand-text-muted mb-4 leading-relaxed">{plan.desc}</p>
                   
-                  <div className="flex items-baseline gap-1 mb-8 pb-6 border-b border-brand-border-strong">
+                  {plan.comparison_badge && (
+                    <div className="mb-4 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold flex items-center gap-1.5 shadow-sm">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>{plan.comparison_badge}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-baseline gap-1 mb-2">
                     <span className="text-xs font-semibold text-brand-text-muted">R$</span>
                     <span className="font-display text-4xl font-extrabold tracking-tight">{plan.price}</span>
                     <span className="text-xs text-brand-text-muted">{plan.period}</span>
                   </div>
 
+                  {plan.billing_cycle === 'YEARLY' && (
+                    <div className="text-[11px] text-brand-teal font-semibold font-mono mb-6 pb-4 border-b border-brand-border-strong flex items-center gap-1">
+                      <span>Equivale a apenas <strong>R$ 4,99/mês</strong></span>
+                    </div>
+                  )}
+                  {plan.billing_cycle !== 'YEARLY' && (
+                    <div className="text-[11px] text-brand-text-muted mb-6 pb-4 border-b border-brand-border-strong">
+                      <span>Cobrança mensal recorrente sem carência</span>
+                    </div>
+                  )}
+
                   <ul className="space-y-3.5 mb-8 text-xs text-brand-text">
                     {plan.features.map((feat: any, idx: number) => (
-                      <li key={idx} className="flex items-center gap-2.5">
-                        {feat.hasLock ? (
-                          <div className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/40 shadow-sm">
+                      <li key={idx} className="flex items-start gap-2.5">
+                        {feat.hasLock || plan.is_coming_soon ? (
+                          <div className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/40 shadow-sm mt-0.5">
                             <Lock className="w-2.5 h-2.5 text-amber-400" />
                           </div>
                         ) : (
-                          <CheckCircle2 className="w-4 h-4 text-brand-teal shrink-0" />
+                          <CheckCircle2 className="w-4 h-4 text-brand-teal shrink-0 mt-0.5" />
                         )}
-                        <span className={`flex items-center gap-1.5 flex-wrap ${feat.strong ? 'font-bold text-brand-teal' : ''}`}>
+                        <span className={`flex items-center gap-1.5 flex-wrap leading-tight ${feat.strong ? 'font-bold text-brand-teal' : ''}`}>
                           {feat.text}
                           {feat.hasLock && (
                             <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full ml-1">
@@ -628,16 +1060,29 @@ export default function LandingPage() {
                   </ul>
                 </div>
 
-                <button
-                  onClick={() => handleOpenModal(plan.id)}
-                  className={`w-full py-3.5 rounded-full font-display font-bold text-sm transition-all flex items-center justify-center gap-2 ${
-                    plan.highlight
-                      ? 'bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink hover:opacity-95 shadow-lg shadow-brand-accent/20'
-                      : 'bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text'
-                  }`}
-                >
-                  Assinar Plano {plan.name}
-                </button>
+                {/* Botão do Plano: desabilitado e com indicação EM BREVE se is_coming_soon */}
+                {plan.is_coming_soon ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full py-3.5 rounded-full font-display font-bold text-xs bg-brand-surface-2 border border-amber-500/40 text-amber-300/80 cursor-not-allowed flex items-center justify-center gap-2 shadow-none"
+                  >
+                    <Clock className="w-4 h-4 text-amber-400" />
+                    <span>EM BREVE — Indisponível no Momento</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenModal(plan.id)}
+                    className={`w-full py-3.5 rounded-full font-display font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
+                      plan.is_popular
+                        ? 'bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink hover:opacity-95 shadow-brand-accent/25'
+                        : 'bg-brand-surface-2 hover:bg-brand-surface-2/80 text-brand-text border border-brand-border-strong hover:border-brand-teal'
+                    }`}
+                  >
+                    Assinar {plan.name}
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -657,18 +1102,15 @@ export default function LandingPage() {
                   <span>Compromisso com a Saúde e Ética Veterinária</span>
                 </h3>
                 <p className="text-xs md:text-[13px] text-brand-text-muted leading-relaxed">
-                  Para uma orientação mais precisa, procure sempre um <strong>médico-veterinário presencial de sua confiança</strong> ou assine o nosso plano com o <strong>Especialista</strong>. A orientação técnica por inteligência artificial é uma ferramenta de apoio informativo e triagem preliminar, e <strong>não substitui a consulta física, o exame detalhado e o diagnóstico de um profissional médico-veterinário especializado</strong>.
+                  Para uma orientação mais precisa, procure sempre um <strong>médico-veterinário presencial de sua confiança</strong>. A orientação técnica por inteligência artificial é uma ferramenta de apoio informativo e triagem preliminar, e <strong>não substitui a consulta física, o exame detalhado e o diagnóstico de um profissional médico-veterinário habilitado</strong>.
                 </p>
               </div>
             </div>
 
-            <a
-              href="#planos"
-              className="px-6 py-3 rounded-full bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-all shrink-0 shadow-md flex items-center gap-2"
-            >
-              <UserCheck className="w-4 h-4" />
-              Falar com Especialista
-            </a>
+            <div className="px-5 py-2.5 rounded-full bg-brand-surface-2 border border-brand-border-strong text-brand-text-muted text-xs font-bold flex items-center gap-2 shrink-0 cursor-default opacity-85">
+              <UserCheck className="w-4 h-4 text-amber-400" />
+              <span>Atendimento com Especialista (Em Breve)</span>
+            </div>
           </div>
         </div>
       </section>
@@ -736,7 +1178,7 @@ export default function LandingPage() {
                 <Lock className="w-3.5 h-3.5" /> Cadastro Seguro via Asaas
               </div>
               <h3 className="font-display text-xl font-bold">
-                Assinar Plano {selectedPlan === 'especialista' ? `Especialista (R$ ${planPrices.especialista.toFixed(2).replace('.', ',')}/mês)` : `Essencial (R$ ${planPrices.essencial.toFixed(2).replace('.', ',')}/mês)`}
+                Assinar {dynamicPlans.find(p => p.id === selectedPlan)?.name || 'Plano'} (R$ {dynamicPlans.find(p => p.id === selectedPlan)?.price || '9,90'}{dynamicPlans.find(p => p.id === selectedPlan)?.period || '/mês'})
               </h3>
               <p className="text-xs text-brand-text-muted mt-1">
                 Informe seus dados para cadastro do cliente e geração da assinatura.

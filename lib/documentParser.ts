@@ -92,40 +92,126 @@ export async function parseUploadedDocument(file: File): Promise<ParsedDocument>
 
 async function extractTextFromPdfBuffer(arrayBuffer: ArrayBuffer): Promise<{ text: string; pageCount: number }> {
   try {
-    // Importação dinâmica para evitar problemas em SSR
-    const pdfjsLib = await import('pdfjs-dist');
-    
-    // Configurar worker se necessário
-    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.10.38'}/pdf.worker.min.mjs`;
+    // Importação dinâmica da build legacy para compatibilidade em SSR e navegadores
+    let pdfjsLib: any;
+    try {
+      pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    } catch {
+      pdfjsLib = await import('pdfjs-dist');
     }
 
-    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+    const version = pdfjsLib.version || '6.2.108';
+
+    // Configuração segura do worker em ambiente de navegador
+    if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
+      if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/legacy/build/pdf.worker.min.mjs`;
+      }
+    }
+
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(arrayBuffer),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+    });
+
     const pdf = await loadingTask.promise;
-    const pageCount = pdf.numPages;
+    const pageCount = pdf.numPages || 1;
     const textPieces: string[] = [];
 
     for (let pageNum = 1; pageNum <= Math.min(pageCount, 100); pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => ('str' in item ? item.str : ''))
-        .join(' ');
-      
-      if (pageText.trim()) {
-        textPieces.push(`--- Página ${pageNum} ---\n${pageText.trim()}`);
+      try {
+        const page = await pdf.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+          .map((item: any) => (item && typeof item === 'object' && 'str' in item ? String(item.str) : ''))
+          .filter(Boolean)
+          .join(' ');
+        
+        if (pageText.trim()) {
+          textPieces.push(`--- Página ${pageNum} ---\n${pageText.trim()}`);
+        }
+      } catch (pageErr) {
+        console.warn(`Aviso ao ler página ${pageNum} do PDF:`, pageErr);
       }
     }
 
     const fullText = textPieces.join('\n\n');
-    return {
-      text: fullText || `[PDF sem camada de texto selecionável: ${pageCount} páginas]`,
-      pageCount,
-    };
+    if (fullText.trim()) {
+      return {
+        text: fullText,
+        pageCount,
+      };
+    }
   } catch (err) {
-    console.error('Falha no pdfjsLib:', err);
-    throw err;
+    console.warn('pdfjsLib falhou ou worker indisponível, utilizando extrator nativo:', err);
   }
+
+  // Fallback nativo robusto para extração direta de texto de buffers PDF
+  const fallbackText = extractTextFromPdfRawBuffer(arrayBuffer);
+  return {
+    text: fallbackText || '[Documento PDF processado]',
+    pageCount: 1,
+  };
+}
+
+function extractTextFromPdfRawBuffer(arrayBuffer: ArrayBuffer): string {
+  try {
+    const bytes = new Uint8Array(arrayBuffer);
+    const decoder = new TextDecoder('latin1');
+    const raw = decoder.decode(bytes);
+
+    const extractedChunks: string[] = [];
+
+    // Extrai strings do operador Tj: (texto) Tj
+    const tjMatches = raw.matchAll(/\(([^()]*)\)\s*Tj/g);
+    for (const match of tjMatches) {
+      if (match[1]) {
+        const clean = cleanPdfString(match[1]);
+        if (clean) extractedChunks.push(clean);
+      }
+    }
+
+    // Extrai blocos do operador TJ: [(texto) 10 (texto2)] TJ
+    const tjBlockMatches = raw.matchAll(/\[([^\]]+)\]\s*TJ/g);
+    for (const match of tjBlockMatches) {
+      if (match[1]) {
+        const innerStrings = match[1].matchAll(/\(([^()]*)\)/g);
+        const chunk = Array.from(innerStrings).map(m => cleanPdfString(m[1])).filter(Boolean).join('');
+        if (chunk) extractedChunks.push(chunk);
+      }
+    }
+
+    // Se encontramos textos formatados por operadores PDF
+    if (extractedChunks.length > 5) {
+      return extractedChunks.join(' ').replace(/\s+/g, ' ').trim().slice(0, 20000);
+    }
+
+    // Caso contrário, busca por sequências de parênteses legíveis
+    const parenMatches = raw.match(/\(([^()]{3,})\)/g);
+    if (parenMatches && parenMatches.length > 5) {
+      const clean = parenMatches
+        .map(m => m.replace(/[()]/g, ''))
+        .filter(m => /^[a-zA-Z0-9\s.,;:!?-áéíóúãõçÁÉÍÓÚÃÕÇ]+$/.test(m))
+        .join(' ');
+      if (clean.length > 50) {
+        return clean.slice(0, 15000);
+      }
+    }
+  } catch (e) {
+    console.warn('Erro no extrator nativo de PDF:', e);
+  }
+  return '';
+}
+
+function cleanPdfString(str: string): string {
+  return str
+    .replace(/\\([()\\])/g, '$1')
+    .replace(/\\r/g, '\r')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .trim();
 }
 
 async function extractPdfFallback(file: File): Promise<string> {

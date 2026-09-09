@@ -69,7 +69,7 @@ export const DEFAULT_MODULES: SystemModule[] = [
     id: 'mod-reports',
     name: 'Exportação e Relatórios Clínicos (PDF/Excel)',
     category: 'Gestão & Auditoria',
-    description: 'Gera relatórios consolidados de sintomas mais frequentes por raça, histórico de triagens e índices de encaminhamento.',
+    description: 'Gera relatórios consolidados de sinais clínicos mais frequentes por raça, histórico de triagens e índices de encaminhamento.',
     enabled: false
   },
   {

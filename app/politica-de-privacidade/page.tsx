@@ -246,7 +246,7 @@ export default function PoliticaDePrivacidadePage() {
                 <div className="p-3 rounded-xl bg-brand-surface-2 border border-brand-border-strong flex items-start gap-2.5">
                   <Lock className="w-4 h-4 text-brand-teal shrink-0 mt-0.5" />
                   <div>
-                    <b className="text-brand-text">Modelos de IA (Google Gemini API):</b> Processamento em trânsito com criptografia de ponta para interpretar os sintomas relatados no chat e gerar respostas informativas de triagem em tempo real.
+                    <b className="text-brand-text">Modelos de IA (Google Gemini API):</b> Processamento em trânsito com criptografia de ponta para interpretar os sinais clínicos relatados no chat e gerar respostas informativas de triagem em tempo real.
                   </div>
                 </div>
                 <div className="p-3 rounded-xl bg-brand-surface-2 border border-brand-border-strong flex items-start gap-2.5">

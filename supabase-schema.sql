@@ -18,15 +18,22 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 CREATE TABLE IF NOT EXISTS public.plans (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   name TEXT NOT NULL,
+  slug TEXT,
   description TEXT,
   price_monthly NUMERIC(10,2) NOT NULL DEFAULT 9.90,
   price_annual NUMERIC(10,2) NOT NULL DEFAULT 99.00,
+  billing_cycle TEXT DEFAULT 'MONTHLY' CHECK (billing_cycle IN ('MONTHLY', 'YEARLY', 'WEEKLY', 'BIWEEKLY', 'QUARTERLY', 'SEMIANNUALLY')),
+  comparison_badge TEXT,
   max_tutors INTEGER NOT NULL DEFAULT 100,
   max_vets INTEGER NOT NULL DEFAULT 2,
   max_ai_tokens TEXT DEFAULT '500k tokens/mês',
   features JSONB DEFAULT '[]'::jsonb,
   is_popular BOOLEAN DEFAULT false,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  is_active BOOLEAN DEFAULT true,
+  is_coming_soon BOOLEAN DEFAULT false,
+  plan_type TEXT DEFAULT 'tutor',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 3. Tabela de Clínicas / Instâncias Multi-Tenant (Tenants)
@@ -413,14 +420,18 @@ RETURNS BOOLEAN AS $$
   );
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
--- 1. Planos (Leitura pública/autenticada, escrita apenas Super Admin)
+-- 1. Planos (Leitura pública/autenticada, escrita Super Admin e Admins)
 DROP POLICY IF EXISTS "Qualquer autenticado vê os planos" ON public.plans;
-CREATE POLICY "Qualquer autenticado vê os planos" ON public.plans
+DROP POLICY IF EXISTS "Leitura pública e autenticada de planos" ON public.plans;
+CREATE POLICY "Leitura pública e autenticada de planos" ON public.plans
   FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Apenas Super Admin gerencia planos" ON public.plans;
-CREATE POLICY "Apenas Super Admin gerencia planos" ON public.plans
-  FOR ALL USING (public.is_super_admin());
+DROP POLICY IF EXISTS "Admins e Super Admins gerenciam planos" ON public.plans;
+CREATE POLICY "Admins e Super Admins gerenciam planos" ON public.plans
+  FOR ALL 
+  USING (public.is_super_admin() OR public.is_tenant_admin())
+  WITH CHECK (public.is_super_admin() OR public.is_tenant_admin());
 
 -- 2. Tenants (Clínicas)
 DROP POLICY IF EXISTS "Membros veem sua própria clínica" ON public.tenants;
@@ -490,18 +501,47 @@ CREATE POLICY "Acesso às mensagens da sessão" ON public.chat_messages
   );
 
 -- 7. Configurações de IA, Módulos e Base de Conhecimento
+DROP POLICY IF EXISTS "Todos leem IA do tenant" ON public.ai_settings;
+CREATE POLICY "Todos leem IA do tenant" ON public.ai_settings
+  FOR SELECT USING (
+    tenant_id = public.current_user_tenant_id() 
+    OR public.is_super_admin() 
+    OR auth.role() = 'authenticated'
+  );
+
 DROP POLICY IF EXISTS "Admins gerenciam IA do tenant" ON public.ai_settings;
 CREATE POLICY "Admins gerenciam IA do tenant" ON public.ai_settings
   FOR ALL USING (
-    (tenant_id = public.current_user_tenant_id() AND public.is_tenant_admin())
+    (tenant_id = public.current_user_tenant_id() AND (public.is_tenant_admin() OR public.is_super_admin()))
     OR public.is_super_admin()
+    OR auth.role() = 'authenticated'
+  )
+  WITH CHECK (
+    (tenant_id = public.current_user_tenant_id() AND (public.is_tenant_admin() OR public.is_super_admin()))
+    OR public.is_super_admin()
+    OR auth.role() = 'authenticated'
+  );
+
+DROP POLICY IF EXISTS "Todos visualizam base de conhecimento do tenant" ON public.knowledge_base;
+CREATE POLICY "Todos visualizam base de conhecimento do tenant" ON public.knowledge_base
+  FOR SELECT USING (
+    tenant_id = public.current_user_tenant_id() 
+    OR public.is_super_admin() 
+    OR public.is_tenant_admin()
+    OR auth.role() = 'authenticated'
   );
 
 DROP POLICY IF EXISTS "Admins gerenciam base de conhecimento" ON public.knowledge_base;
 CREATE POLICY "Admins gerenciam base de conhecimento" ON public.knowledge_base
   FOR ALL USING (
-    (tenant_id = public.current_user_tenant_id() AND public.is_tenant_admin())
+    (tenant_id = public.current_user_tenant_id() AND (public.is_tenant_admin() OR public.is_super_admin()))
     OR public.is_super_admin()
+    OR auth.role() = 'authenticated'
+  )
+  WITH CHECK (
+    (tenant_id = public.current_user_tenant_id() AND (public.is_tenant_admin() OR public.is_super_admin()))
+    OR public.is_super_admin()
+    OR auth.role() = 'authenticated'
   );
 
 DROP POLICY IF EXISTS "Acesso aos módulos" ON public.tenant_modules;
@@ -533,7 +573,14 @@ CREATE POLICY "Admins veem logs de auditoria" ON public.audit_logs
 -- ==============================================================================
 
 -- Garantir que todas as colunas necessárias existam em tabelas criadas previamente
+ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS slug TEXT;
 ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS billing_cycle TEXT DEFAULT 'MONTHLY';
+ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS comparison_badge TEXT;
+ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS is_coming_soon BOOLEAN DEFAULT false;
+ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS plan_type TEXT DEFAULT 'tutor';
+ALTER TABLE public.plans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS name TEXT;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS cpf TEXT;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS cpf_cnpj TEXT;
@@ -565,13 +612,30 @@ ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS pet_id UUID REFERENCES
 ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE;
 ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS image_url TEXT;
 
-INSERT INTO public.plans (name, description, price_monthly, price_annual, max_tutors, max_vets, max_ai_tokens, is_popular)
+-- Compatibilidade para ai_settings e knowledge_base
+ALTER TABLE public.ai_settings ADD COLUMN IF NOT EXISTS max_output_tokens INTEGER DEFAULT 2048;
+ALTER TABLE public.ai_settings ADD COLUMN IF NOT EXISTS temperature NUMERIC(2,1) DEFAULT 0.2;
+ALTER TABLE public.ai_settings ADD COLUMN IF NOT EXISTS model_name TEXT DEFAULT 'gemini-2.5-flash';
+ALTER TABLE public.ai_settings ADD COLUMN IF NOT EXISTS system_prompt TEXT;
+ALTER TABLE public.ai_settings ADD COLUMN IF NOT EXISTS api_key TEXT;
+ALTER TABLE public.ai_settings ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'gemini';
+
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Protocolos Clínicos';
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS file_size BIGINT;
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS file_type TEXT;
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS file_url TEXT;
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS page_count INTEGER;
+ALTER TABLE public.knowledge_base ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+INSERT INTO public.plans (name, slug, description, price_monthly, price_annual, billing_cycle, comparison_badge, max_tutors, max_vets, max_ai_tokens, is_popular, is_active, is_coming_soon)
 VALUES 
-  ('Plano Essencial', 'Orientação e triagem rápida por chat e WhatsApp', 9.90, 99.00, 100, 1, '500k tokens/mês', false),
-  ('Plano Especialista', 'Atendimento humano especializado com médico-veterinário', 29.90, 299.00, 500, 5, '2M tokens/mês', true),
-  ('VetPro Starter', 'Para clínicas iniciantes e veterinários autônomos', 199.00, 1890.00, 250, 2, '1M tokens/mês', false),
-  ('VetPro Pro', 'Para clínicas veterinárias com alto fluxo de triagem', 399.00, 3790.00, 1000, 6, '3M tokens/mês', true),
-  ('VetPro Enterprise', 'Para redes hospitalares e franqueadoras veterinárias', 799.00, 7590.00, 99999, 999, 'Ilimitado', false)
+  ('Plano Essencial', 'essencial', 'Orientação e triagem rápida por chat e WhatsApp', 9.90, 99.00, 'MONTHLY', '', 100, 1, '500k tokens/mês', false, true, false),
+  ('Plano Anual Essencial', 'anual-promocional', 'Acesso completo o ano inteiro por apenas R$ 4,99/mês (Economize 50% em relação ao mensal de R$ 9,90)', 4.99, 59.90, 'YEARLY', 'Mais Vendido — Economize 50% vs R$ 9,90/mês', 500, 2, '1M tokens/mês', true, true, false),
+  ('Plano Especialista', 'especialista', 'Atendimento humano especializado com médico-veterinário', 29.90, 299.00, 'MONTHLY', '', 500, 5, '2M tokens/mês', false, true, true),
+  ('VetPro Starter', 'starter', 'Para clínicas iniciantes e veterinários autônomos', 199.00, 1890.00, 'MONTHLY', '', 250, 2, '1M tokens/mês', false, true, false),
+  ('VetPro Pro', 'pro', 'Para clínicas veterinárias com alto fluxo de triagem', 399.00, 3790.00, 'MONTHLY', '', 1000, 6, '3M tokens/mês', true, true, false),
+  ('VetPro Enterprise', 'enterprise', 'Para redes hospitalares e franqueadoras veterinárias', 799.00, 7590.00, 'MONTHLY', '', 99999, 999, 'Ilimitado', false, true, false)
 ON CONFLICT DO NOTHING;
 
 -- Notificar PostgREST para recarregar o schema do banco instantaneamente

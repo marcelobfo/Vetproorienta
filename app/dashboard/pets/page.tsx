@@ -517,7 +517,7 @@ export default function PetsPage() {
 
                   {pet.symptoms && (
                     <div className="text-xs text-brand-text-muted bg-brand-bg/50 p-2.5 rounded-lg border border-brand-border-strong mb-2 line-clamp-2">
-                      <span className="font-bold text-brand-text">Últimos sintomas: </span>
+                      <span className="font-bold text-brand-text">Últimos sinais clínicos: </span>
                       {pet.symptoms}
                     </div>
                   )}
