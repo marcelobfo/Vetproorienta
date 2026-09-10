@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react';
 import { 
   Zap, ShieldCheck, PhoneCall, FileSpreadsheet, 
   Stethoscope, Sparkles, CheckCircle2, AlertCircle, Save, Building, RefreshCw,
-  MapPin, ShieldAlert, Crown
+  MapPin, ShieldAlert, Crown, LayoutGrid, ArrowRight, Eye, EyeOff
 } from 'lucide-react';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
-import { DEFAULT_MODULES, SYSTEM_MODULE_KEYS } from '@/lib/moduleService';
+import { DEFAULT_MODULES, SYSTEM_MODULE_KEYS, getHomeAdvantagesMode, setHomeAdvantagesMode, HomeAdvantagesMode } from '@/lib/moduleService';
 
 interface ModuleItem {
   id: string;
@@ -88,6 +88,8 @@ export default function ModulosAdminPage() {
   const [selectedTenant, setSelectedTenant] = useState('global');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [homeMode, setHomeMode] = useState<HomeAdvantagesMode>('benefits');
+  const [savingHomeMode, setSavingHomeMode] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -98,6 +100,18 @@ export default function ModulosAdminPage() {
   const loadModules = async () => {
     setLoading(true);
     try {
+      // Carrega modo da Home
+      const localHomeMode = getHomeAdvantagesMode();
+      setHomeMode(localHomeMode);
+
+      try {
+        const resSettings = await fetch('/api/admin/home-settings');
+        const dataSettings = await resSettings.json();
+        if (dataSettings?.settings?.advantages_mode) {
+          setHomeMode(dataSettings.settings.advantages_mode);
+        }
+      } catch {}
+
       if (isSupabaseConfigured()) {
         const supabase = getSupabaseClient();
         const { data, error } = await supabase
@@ -108,6 +122,9 @@ export default function ModulosAdminPage() {
           const map: Record<string, boolean> = {};
           data.forEach((row: any) => {
             map[row.module_key] = row.enabled;
+            if (row.module_key === SYSTEM_MODULE_KEYS.HOME_BENEFITS_MODE && row.settings?.mode) {
+              setHomeMode(row.settings.mode);
+            }
           });
 
           setModules(INITIAL_MODULES.map(m => ({
@@ -139,6 +156,31 @@ export default function ModulosAdminPage() {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSetHomeMode = async (newMode: HomeAdvantagesMode) => {
+    setHomeMode(newMode);
+    setSavingHomeMode(true);
+    try {
+      await setHomeAdvantagesMode(newMode);
+      await fetch('/api/admin/home-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ advantages_mode: newMode })
+      });
+      showToast(
+        newMode === 'benefits' 
+          ? 'Home atualizada: Modo "Benefícios Exclusivos VetPro" ativado!'
+          : newMode === 'comparison'
+          ? 'Home atualizada: Modo "Comparativo VetPro vs. Google" ativado!'
+          : 'Seção de vantagens desativada na Home!',
+        'success'
+      );
+    } catch (err: any) {
+      showToast(`Erro ao alterar modo da Home: ${err.message}`, 'error');
+    } finally {
+      setSavingHomeMode(false);
     }
   };
 
@@ -273,6 +315,103 @@ export default function ModulosAdminPage() {
             <option value="tenant-2">Hospital Veterinário PetCare 24h</option>
             <option value="tenant-4">Clínica Amigo Fiel</option>
           </select>
+        </div>
+
+        {/* Card Especial: Seletor de Apresentação da Home (Benefícios vs. Comparativo Google) */}
+        <div className="bg-gradient-to-br from-brand-surface to-brand-surface-2 border-2 border-brand-teal/40 rounded-3xl p-6 md:p-7 mb-8 shadow-xl shadow-brand-teal/5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-brand-teal/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+            <div className="max-w-xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-teal/15 text-brand-teal text-[11px] font-bold uppercase tracking-wider mb-3">
+                <Sparkles className="w-3.5 h-3.5 text-brand-teal" /> Controle de Conversão na Home
+              </div>
+              <h2 className="font-display font-bold text-lg md:text-xl text-brand-text mb-2">
+                Apresentação da Seção de Vantagens da Home
+              </h2>
+              <p className="text-xs text-brand-text-muted leading-relaxed">
+                Alterne instantaneamente o que os visitantes e tutores visualizam na landing page principal. Você pode exibir os <strong>Benefícios Exclusivos da VetPro</strong>, o <strong>Comparativo com o Google</strong> ou ocultar a seção.
+              </p>
+            </div>
+
+            {/* Controles de Alternância */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+              
+              {/* Opção 1: Benefícios VetPro */}
+              <button
+                type="button"
+                onClick={() => handleSetHomeMode('benefits')}
+                disabled={savingHomeMode}
+                className={`px-4 py-3 rounded-2xl text-xs font-bold transition-all border flex items-center gap-2.5 justify-center ${
+                  homeMode === 'benefits'
+                    ? 'bg-brand-teal text-brand-bg border-brand-teal shadow-lg shadow-brand-teal/20 scale-[1.02]'
+                    : 'bg-brand-surface border-brand-border-strong text-brand-text hover:bg-brand-surface-2'
+                }`}
+              >
+                <CheckCircle2 className={`w-4 h-4 ${homeMode === 'benefits' ? 'text-brand-bg' : 'text-brand-teal'}`} />
+                <div className="text-left">
+                  <div>Benefícios Diretos</div>
+                  <div className="text-[10px] font-normal opacity-80">Sem comparativo</div>
+                </div>
+              </button>
+
+              {/* Opção 2: Comparativo Google */}
+              <button
+                type="button"
+                onClick={() => handleSetHomeMode('comparison')}
+                disabled={savingHomeMode}
+                className={`px-4 py-3 rounded-2xl text-xs font-bold transition-all border flex items-center gap-2.5 justify-center ${
+                  homeMode === 'comparison'
+                    ? 'bg-brand-surface border-[#4285F4] text-brand-text shadow-lg shadow-[#4285F4]/20 ring-2 ring-[#4285F4]/40 scale-[1.02]'
+                    : 'bg-brand-surface border-brand-border-strong text-brand-text hover:bg-brand-surface-2'
+                }`}
+              >
+                <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center text-[10px] font-bold text-[#4285F4] shadow-xs">
+                  G
+                </div>
+                <div className="text-left">
+                  <div>Versus Google</div>
+                  <div className="text-[10px] font-normal opacity-80">Quadro comparativo</div>
+                </div>
+              </button>
+
+              {/* Opção 3: Ocultar Seção */}
+              <button
+                type="button"
+                onClick={() => handleSetHomeMode('hidden')}
+                disabled={savingHomeMode}
+                className={`px-4 py-3 rounded-2xl text-xs font-bold transition-all border flex items-center gap-2.5 justify-center ${
+                  homeMode === 'hidden'
+                    ? 'bg-zinc-800 text-white border-zinc-600 shadow-md scale-[1.02]'
+                    : 'bg-brand-surface border-brand-border-strong text-brand-text-muted hover:text-brand-text hover:bg-brand-surface-2'
+                }`}
+              >
+                <EyeOff className="w-4 h-4" />
+                <div className="text-left">
+                  <div>Ocultar Seção</div>
+                  <div className="text-[10px] font-normal opacity-80">Desativa o bloco</div>
+                </div>
+              </button>
+
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-brand-border-strong/60 flex flex-col sm:flex-row items-center justify-between text-[11px] text-brand-text-muted gap-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-brand-teal animate-pulse" />
+              <span>Status Atual na Home: <strong className="text-brand-text font-semibold">
+                {homeMode === 'benefits' ? '★ Modo Benefícios Diretos Ativo (Recomendado)' : homeMode === 'comparison' ? '⇄ Modo Comparativo VetPro vs Google Ativo' : '✕ Seção Oculta na Home'}
+              </strong></span>
+            </div>
+            <a
+              href="/#vantagens"
+              target="_blank"
+              className="text-brand-teal hover:underline font-bold flex items-center gap-1"
+            >
+              <span>Ver como está na Home</span>
+              <ArrowRight className="w-3 h-3" />
+            </a>
+          </div>
         </div>
 
         {/* Modules Grid */}

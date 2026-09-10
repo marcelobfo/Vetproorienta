@@ -43,6 +43,10 @@ export default function AdminPlanosPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newFeatureText, setNewFeatureText] = useState('');
 
+  // Estado do Modal de Exclusão Segura
+  const [planToDelete, setPlanToDelete] = useState<{ id: string; name: string; isCanonical?: boolean } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
   const fetchPlans = async () => {
     setLoading(true);
     try {
@@ -150,20 +154,31 @@ export default function AdminPlanosPage() {
     }
   };
 
-  const handleDeletePlan = async (id: string, name: string) => {
-    if (!confirm(`Tem certeza que deseja excluir o plano "${name}"?`)) return;
+  const promptSafeDelete = (plan: Plan) => {
+    const isCanon = ['essencial', 'anual-promocional', 'especialista'].includes(plan.slug || plan.id);
+    setPlanToDelete({
+      id: plan.db_id || plan.id,
+      name: plan.name,
+      isCanonical: isCanon
+    });
+    setDeleteConfirmText('');
+  };
+
+  const handleExecuteSafeDelete = async () => {
+    if (!planToDelete) return;
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/admin/plans?id=${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/admin/plans?id=${encodeURIComponent(planToDelete.id)}`, {
         method: 'DELETE'
       });
       const data = await res.json();
       if (data.success) {
-        setFeedback({ type: 'success', message: `Plano "${name}" removido com sucesso.` });
+        setFeedback({ type: 'success', message: `Plano "${planToDelete.name}" removido com total segurança!` });
+        setPlanToDelete(null);
         await fetchPlans();
       } else {
-        setFeedback({ type: 'error', message: data.error || 'Erro ao excluir' });
+        setFeedback({ type: 'error', message: data.error || 'Erro ao excluir plano' });
       }
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message });
@@ -491,9 +506,9 @@ export default function AdminPlanosPage() {
 
                     <button
                       type="button"
-                      onClick={() => handleDeletePlan(plan.db_id || plan.id, plan.name)}
+                      onClick={() => promptSafeDelete(plan)}
                       className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all"
-                      title="Excluir Plano"
+                      title="Excluir Plano com Segurança"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -780,11 +795,11 @@ export default function AdminPlanosPage() {
                     type="button"
                     onClick={() => {
                       setIsModalOpen(false);
-                      handleDeletePlan(editingPlan.db_id || editingPlan.slug || editingPlan.id, editingPlan.name);
+                      promptSafeDelete(editingPlan);
                     }}
                     className="px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all"
                   >
-                    <Trash2 className="w-3.5 h-3.5" /> Excluir este Plano
+                    <Trash2 className="w-3.5 h-3.5" /> Excluir com Segurança
                   </button>
                 ) : <div />}
 
@@ -817,6 +832,76 @@ export default function AdminPlanosPage() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Exclusão com Segurança */}
+      {planToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-brand-surface border-2 border-rose-500/40 rounded-3xl p-6 md:p-8 w-full max-w-md shadow-2xl relative">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <h3 className="font-display text-lg font-bold text-brand-text mb-2">
+              Confirmar Exclusão com Segurança
+            </h3>
+            
+            <p className="text-xs text-brand-text-muted leading-relaxed mb-4">
+              Você está prestes a excluir permanentemente o plano <strong className="text-brand-text">&quot;{planToDelete.name}&quot;</strong>. Esta ação não poderá ser desfeita.
+            </p>
+
+            {planToDelete.isCanonical && (
+              <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Atenção:</strong> Este é um dos 3 planos canônicos do sistema. Se desejar apenas ocultá-lo da Home pública, você pode desativá-lo através do interruptor de status sem precisar excluí-lo.
+                </span>
+              </div>
+            )}
+
+            <div className="mb-5 space-y-2">
+              <label className="block text-[11px] font-semibold text-brand-text-muted">
+                Digite <strong className="text-rose-400 font-mono">EXCLUIR</strong> abaixo para confirmar:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="EXCLUIR"
+                className="w-full bg-brand-surface-2 border border-brand-border-strong focus:border-rose-500 rounded-xl px-3.5 py-2.5 text-xs text-brand-text font-mono uppercase tracking-wider focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-brand-border-strong">
+              <button
+                type="button"
+                onClick={() => setPlanToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-brand-border-strong text-brand-text-muted hover:text-brand-text text-xs font-semibold transition-colors"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={deleteConfirmText.trim().toUpperCase() !== 'EXCLUIR' || saving}
+                onClick={handleExecuteSafeDelete}
+                className="px-5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-2 transition-all shadow-md"
+              >
+                {saving ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Excluindo...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Confirmar Exclusão
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

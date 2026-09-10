@@ -13,6 +13,7 @@ export interface SystemModule {
 
 export const SYSTEM_MODULE_KEYS = {
   PARCEIROS_GPS: 'mod-parceiros-gps',
+  HOME_BENEFITS_MODE: 'mod-home-benefits-mode', // 'benefits' | 'comparison' | 'hidden'
   EXPERT_VET: 'mod-expert',
   PRESCRIPTION: 'mod-prescription',
   WHATSAPP_EVOLUTION: 'mod-whatsapp',
@@ -21,7 +22,20 @@ export const SYSTEM_MODULE_KEYS = {
   WHITELABEL: 'mod-whitelabel',
 } as const;
 
+export type HomeAdvantagesMode = 'benefits' | 'comparison' | 'hidden';
+
 export const DEFAULT_MODULES: SystemModule[] = [
+  {
+    id: 'mod-home-benefits-mode',
+    name: 'Apresentação da Home: Benefícios Diretos vs. Comparativo Google',
+    category: 'Marketing & Conversão',
+    description: 'Permite alternar a seção de vantagens da Home entre: (1) Modo Benefícios Exclusivos da VetPro, (2) Modo Comparativo com Busca no Google, ou (3) Ocultar Seção.',
+    enabled: true,
+    requiresSuperAdmin: true,
+    settings: {
+      mode: 'benefits' as HomeAdvantagesMode // padrão agora pode ser 'benefits' ou configurável
+    }
+  },
   {
     id: 'mod-parceiros-gps',
     name: 'Rede de Parceiros, GPS & Anúncios Rotativos',
@@ -206,3 +220,58 @@ export async function toggleSystemModule(
     return { success: false, error: err.message || 'Erro ao alterar estado do módulo' };
   }
 }
+
+const HOME_ADVANTAGES_MODE_STORAGE_KEY = 'vetpro_home_advantages_mode';
+
+/**
+ * Obtém o modo de exibição da seção de vantagens da Home ('benefits' | 'comparison' | 'hidden')
+ */
+export function getHomeAdvantagesMode(): HomeAdvantagesMode {
+  if (typeof window === 'undefined') return 'benefits';
+  try {
+    const saved = localStorage.getItem(HOME_ADVANTAGES_MODE_STORAGE_KEY);
+    if (saved === 'benefits' || saved === 'comparison' || saved === 'hidden') {
+      return saved;
+    }
+  } catch {}
+  return 'benefits';
+}
+
+/**
+ * Atualiza o modo de exibição da seção de vantagens da Home
+ */
+export async function setHomeAdvantagesMode(
+  mode: HomeAdvantagesMode
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(HOME_ADVANTAGES_MODE_STORAGE_KEY, mode);
+      window.dispatchEvent(new CustomEvent('vetpro_home_mode_changed', { detail: { mode } }));
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseClient();
+        const { data: tenantData } = await supabase.from('tenants').select('id').limit(1).maybeSingle();
+        const tenantId = tenantData?.id;
+
+        if (tenantId) {
+          await supabase.from('tenant_modules').upsert({
+            tenant_id: tenantId,
+            module_key: SYSTEM_MODULE_KEYS.HOME_BENEFITS_MODE,
+            enabled: mode !== 'hidden',
+            settings: { mode },
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'tenant_id,module_key' });
+        }
+      } catch (e) {
+        console.warn('Erro ao salvar modo da Home no Supabase:', e);
+      }
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro ao alterar modo da Home' };
+  }
+}
+

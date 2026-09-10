@@ -35,6 +35,37 @@ export default function LandingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+  const [advantagesMode, setAdvantagesMode] = useState<'benefits' | 'comparison' | 'hidden'>('benefits');
+
+  useEffect(() => {
+    // Carrega modo da seção de vantagens
+    const loadAdvantagesMode = async () => {
+      try {
+        if (typeof window !== 'undefined') {
+          const saved = localStorage.getItem('vetpro_home_advantages_mode');
+          if (saved === 'benefits' || saved === 'comparison' || saved === 'hidden') {
+            setAdvantagesMode(saved);
+          }
+        }
+        const res = await fetch('/api/admin/home-settings');
+        const data = await res.json();
+        if (data?.settings?.advantages_mode) {
+          setAdvantagesMode(data.settings.advantages_mode);
+        }
+      } catch {}
+    };
+    loadAdvantagesMode();
+
+    const handleModeChange = (e: any) => {
+      if (e?.detail?.mode) {
+        setAdvantagesMode(e.detail.mode);
+      }
+    };
+    window.addEventListener('vetpro_home_mode_changed', handleModeChange);
+    return () => {
+      window.removeEventListener('vetpro_home_mode_changed', handleModeChange);
+    };
+  }, []);
 
   const [dynamicPlans, setDynamicPlans] = useState<any[]>([
     {
@@ -597,282 +628,514 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Dobra: VetPro Orienta vs Busca no Google */}
-      <section id="vantagens" className="py-24 relative overflow-hidden bg-brand-surface/20 border-b border-brand-border-strong">
-        <div className="max-w-[1140px] mx-auto px-6">
-          <div className="text-center max-w-[760px] mx-auto mb-16">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-wider mb-3.5 shadow-sm">
-              <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Comparativo Direto
-            </div>
-            <h2 className="font-display text-[32px] md:text-[40px] font-bold tracking-tight mb-4">
-              VetPro Orienta <span className="text-brand-text-muted font-normal">vs.</span> Busca no Google
-            </h2>
-            <p className="text-brand-text-muted text-[15px] md:text-[16px] leading-relaxed">
-              Pesquisar sinais clínicos soltos em buscadores genéricos expõe o tutor a receitas caseiras perigosas, diagnósticos alarmistas e perda de tempo crítico. Entenda as diferenças fundamentais:
-            </p>
-          </div>
-
-          {/* Cards Lado a Lado */}
-          <div className="grid lg:grid-cols-2 gap-8 mb-12">
+      {/* Dobra: Vantagens da Plataforma (Modo Benefícios Diretos OU Modo Comparativo Google) */}
+      {advantagesMode !== 'hidden' && (
+        <section id="vantagens" className="py-24 relative overflow-hidden bg-brand-surface/20 border-b border-brand-border-strong">
+          <div className="max-w-[1140px] mx-auto px-6">
             
-            {/* LADO 1: Busca Genérica no Google */}
-            <div className="rounded-[24px] p-7 md:p-8 bg-brand-surface/70 border border-red-500/30 shadow-xl shadow-red-500/5 flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 rounded-full blur-3xl pointer-events-none" />
-              
+            {/* VERSÃO 1: MODO BENEFÍCIOS DIRETOS (Sem Comparativo com Google) */}
+            {advantagesMode === 'benefits' && (
               <div>
-                {/* Header do Card Google */}
-                <div className="flex items-center justify-between gap-3 mb-6 pb-4 border-b border-brand-border-strong">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-red-500/15 text-red-400 flex items-center justify-center font-bold">
-                      <Search className="w-4 h-4" />
-                    </div>
+                <div className="text-center max-w-[760px] mx-auto mb-16">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-teal/15 text-brand-teal border border-brand-teal/30 text-xs font-bold uppercase tracking-wider mb-3.5 shadow-sm">
+                    <Sparkles className="w-3.5 h-3.5 text-brand-teal" /> Diferenciais Exclusivos
+                  </div>
+                  <h2 className="font-display text-[32px] md:text-[40px] font-bold tracking-tight mb-4">
+                    Por que a <span className="text-brand-teal">VetPro Orienta</span> é a Escolha Mais Segura para o seu Pet?
+                  </h2>
+                  <p className="text-brand-text-muted text-[15px] md:text-[16px] leading-relaxed">
+                    Mais do que respostas rápidas: uma plataforma estruturada sob conhecimento médico-veterinário, que compreende o histórico real do seu animal e orienta você com tranquilidade, acolhimento e responsabilidade.
+                  </p>
+                </div>
+
+                {/* Grid com 6 Grandes Benefícios */}
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+                  
+                  {/* Benefício 1 */}
+                  <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6 hover:border-brand-teal/40 transition-all shadow-sm flex flex-col justify-between">
                     <div>
-                      <h3 className="font-display font-bold text-lg text-brand-text flex items-center gap-2">
-                        Busca Genérica no Google
+                      <div className="w-12 h-12 rounded-2xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-bold text-lg mb-5 border border-brand-teal/20">
+                        <BrainCircuit className="w-6 h-6" />
+                      </div>
+                      <h3 className="font-display font-bold text-base text-brand-text mb-2 flex items-center gap-2">
+                        Anamnese Ativa & Personalizada
                       </h3>
-                      <p className="text-[11px] text-red-400 font-medium">Desinformação, automedicação e pânico</p>
+                      <p className="text-xs text-brand-text-muted leading-relaxed">
+                        A IA não oferece diagnósticos estáticos: ela conduz uma conversa interativa fazendo perguntas direcionadas sobre tempo de evolução, mucosas, apetite e comportamento para afunilar a orientação.
+                      </p>
+                    </div>
+                    <div className="mt-5 pt-3 border-t border-brand-border-strong/60 flex items-center gap-2 text-[11px] text-brand-teal font-semibold">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Triagem clínica inteligente</span>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 text-[10px] font-extrabold uppercase tracking-wider">
-                    Alto Risco
-                  </span>
+
+                  {/* Benefício 2 */}
+                  <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6 hover:border-brand-teal/40 transition-all shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 rounded-2xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-bold text-lg mb-5 border border-brand-teal/20">
+                        <PawPrint className="w-6 h-6" />
+                      </div>
+                      <h3 className="font-display font-bold text-base text-brand-text mb-2 flex items-center gap-2">
+                        Prontuário Individual do Pet
+                      </h3>
+                      <p className="text-xs text-brand-text-muted leading-relaxed">
+                        Todas as orientações levam em conta a espécie (cão ou gato), raça específica, idade, peso exato e histórico prévio de vacinas, alergias e condições pré-existentes cadastradas no perfil.
+                      </p>
+                    </div>
+                    <div className="mt-5 pt-3 border-t border-brand-border-strong/60 flex items-center gap-2 text-[11px] text-brand-teal font-semibold">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Zero respostas genéricas</span>
+                    </div>
+                  </div>
+
+                  {/* Benefício 3 */}
+                  <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6 hover:border-brand-teal/40 transition-all shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 rounded-2xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-bold text-lg mb-5 border border-brand-teal/20">
+                        <FileText className="w-6 h-6" />
+                      </div>
+                      <h3 className="font-display font-bold text-base text-brand-text mb-2 flex items-center gap-2">
+                        Envio de Fotos e Laudos de Exames
+                      </h3>
+                      <p className="text-xs text-brand-text-muted leading-relaxed">
+                        Anexe fotos de lesões na pele, mucosas, olhos ou fezes, além de laudos de exames laboratoriais e de imagem, para que a triagem tenha máxima fidelidade de dados clínicos.
+                      </p>
+                    </div>
+                    <div className="mt-5 pt-3 border-t border-brand-border-strong/60 flex items-center gap-2 text-[11px] text-brand-teal font-semibold">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Suporte visual e documental</span>
+                    </div>
+                  </div>
+
+                  {/* Benefício 4 */}
+                  <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6 hover:border-brand-teal/40 transition-all shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 rounded-2xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-bold text-lg mb-5 border border-brand-teal/20">
+                        <ShieldCheck className="w-6 h-6" />
+                      </div>
+                      <h3 className="font-display font-bold text-base text-brand-text mb-2 flex items-center gap-2">
+                        Segurança & Prevenção de Automedicação
+                      </h3>
+                      <p className="text-xs text-brand-text-muted leading-relaxed">
+                        A plataforma segue rigorosos princípios éticos e bloqueia a recomendação de receitas caseiras ou remédios humanos que podem ser tóxicos ou letais para o organismo do seu pet.
+                      </p>
+                    </div>
+                    <div className="mt-5 pt-3 border-t border-brand-border-strong/60 flex items-center gap-2 text-[11px] text-brand-teal font-semibold">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Proteção à vida do animal</span>
+                    </div>
+                  </div>
+
+                  {/* Benefício 5 */}
+                  <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6 hover:border-brand-teal/40 transition-all shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 rounded-2xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-bold text-lg mb-5 border border-brand-teal/20">
+                        <Clock className="w-6 h-6" />
+                      </div>
+                      <h3 className="font-display font-bold text-base text-brand-text mb-2 flex items-center gap-2">
+                        Apoio 24 Horas, 7 Dias por Semana
+                      </h3>
+                      <p className="text-xs text-brand-text-muted leading-relaxed">
+                        Sintomas inesperados no meio da madrugada, finais de semana ou feriados não precisam ser enfrentados no escuro. Tenha clareza se é caso de emergência ou cuidados de monitoramento.
+                      </p>
+                    </div>
+                    <div className="mt-5 pt-3 border-t border-brand-border-strong/60 flex items-center gap-2 text-[11px] text-brand-teal font-semibold">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Sempre disponível na palma da mão</span>
+                    </div>
+                  </div>
+
+                  {/* Benefício 6 */}
+                  <div className="bg-brand-surface border border-brand-border-strong rounded-2xl p-6 hover:border-brand-teal/40 transition-all shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="w-12 h-12 rounded-2xl bg-brand-teal/15 text-brand-teal flex items-center justify-center font-bold text-lg mb-5 border border-brand-teal/20">
+                        <Navigation className="w-6 h-6" />
+                      </div>
+                      <h3 className="font-display font-bold text-base text-brand-text mb-2 flex items-center gap-2">
+                        GPS de Pronto-Socorro & Hospitais 24h
+                      </h3>
+                      <p className="text-xs text-brand-text-muted leading-relaxed">
+                        Se a triagem identificar sinais de alerta vermelho (como choque, sangramento ou convulsão), o sistema localiza os hospitais 24h mais próximos e fornece a rota imediata no Google Maps.
+                      </p>
+                    </div>
+                    <div className="mt-5 pt-3 border-t border-brand-border-strong/60 flex items-center gap-2 text-[11px] text-brand-teal font-semibold">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Agilidade em casos críticos</span>
+                    </div>
+                  </div>
+
                 </div>
 
-                {/* Mockup Visual de Busca do Google */}
-                <div className="rounded-xl bg-brand-bg/80 border border-brand-border-strong p-3.5 mb-6 text-xs font-mono space-y-2.5">
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-surface border border-brand-border-strong text-brand-text-muted text-[11px]">
-                    <Search className="w-3.5 h-3.5 text-brand-text-muted shrink-0" />
-                    <span className="truncate text-brand-text">&quot;meu cachorro vomitou amarelo e está tremendo&quot;</span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-[11px] leading-snug">
-                    <div className="flex items-center gap-1.5 font-bold text-red-400 mb-1">
-                      <AlertTriangle className="w-3 h-3" /> Fórum Aberto / Receita Caseira
+                {/* Banner de Tranquilidade e Confiança */}
+                <div className="bg-gradient-to-r from-brand-surface via-brand-surface-2 to-brand-surface border border-brand-teal/30 rounded-[24px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl shadow-brand-teal/5">
+                  <div className="space-y-1 text-center md:text-left">
+                    <div className="flex items-center justify-center md:justify-start gap-2 text-brand-teal text-xs font-bold uppercase tracking-wider">
+                      <ShieldCheck className="w-4 h-4" /> Compromisso com a Saúde Animal
                     </div>
-                    &quot;Pode ser parvovirose fatal ou simples gastrite. Dê 1 colher de chá de água oxigenada ou óleo vegetal...&quot; 
-                    <span className="block mt-1 text-[10px] text-red-400/80 font-sans italic font-normal">⚠️ Receitas perigosas que causam gastrite severa e intoxicação.</span>
+                    <h3 className="font-display font-bold text-lg md:text-xl text-brand-text">
+                      Orientação ética, sem alarmismo e com foco no bem-estar
+                    </h3>
+                    <p className="text-xs text-brand-text-muted max-w-xl">
+                      A plataforma nunca substitui a consulta presencial, mas capacita você a tomar as melhores decisões para o seu companheiro com serenidade.
+                    </p>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-brand-surface-2/60 border border-brand-border-strong text-brand-text-muted text-[11px] leading-snug">
-                    <div className="font-semibold text-brand-text mb-0.5">Artigo de Blog Genérico:</div>
-                    &quot;40 possíveis causas de tremores em cães (sem saber peso, raça, idade ou exame físico).&quot;
-                  </div>
-                </div>
 
-                {/* Lista de Desvantagens */}
-                <ul className="space-y-3.5 text-xs text-brand-text-muted">
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <XCircle className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Zero Contexto Clínico do Animal:</strong> O Google não sabe o peso exato, espécie (cão ou gato), raça, idade ou histórico de vacinas e alergias.
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <XCircle className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Risco Fatal de Automedicação:</strong> Medicamentos humanos comuns (como paracetamol, diclofenaco ou dipirona em doses erradas) são letais para pets.
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <XCircle className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Alarmismo & Pânico Psicológico:</strong> Apresenta diagnósticos catastróficos que desesperam a família sem nenhuma conduta prática.
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <XCircle className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Busca Estática e Passiva:</strong> Ninguém faz perguntas de retorno para checar se a gengiva está branca, se há febre ou dor abdominal.
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <XCircle className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Perda de Tempo Fatal:</strong> Em casos de torção gástrica, obstrução ou choque, horas gastas na web reduzem a chance de sobrevivência.
-                    </div>
-                  </li>
-                </ul>
+                  <a
+                    href="#planos"
+                    className="px-7 py-3.5 rounded-full bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-all shadow-md shrink-0 flex items-center gap-2 scale-100 hover:scale-[1.03]"
+                  >
+                    <span>Começar com o Plano Essencial</span>
+                    <PawPrint className="w-4 h-4" />
+                  </a>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* LADO 2: VetPro Orienta */}
-            <div className="rounded-[24px] p-7 md:p-8 bg-gradient-to-b from-brand-surface to-brand-surface-2 border border-brand-teal/40 shadow-2xl shadow-brand-teal/10 flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-brand-teal/10 rounded-full blur-3xl pointer-events-none" />
-              
+            {/* VERSÃO 2: MODO COMPARATIVO VETPRO VS GOOGLE */}
+            {advantagesMode === 'comparison' && (
               <div>
-                {/* Header do Card VetPro */}
-                <div className="flex items-center justify-between gap-3 mb-6 pb-4 border-b border-brand-border-strong">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-brand-teal/20 text-brand-teal flex items-center justify-center font-bold">
-                      <Stethoscope className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="font-display font-bold text-lg text-brand-text flex items-center gap-2">
-                        Teleorientação VetPro Orienta
-                      </h3>
-                      <p className="text-[11px] text-brand-teal font-medium">Anamnese ativa, base veterinária e ética</p>
-                    </div>
+                <div className="text-center max-w-[760px] mx-auto mb-16">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-wider mb-3.5 shadow-sm">
+                    <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Comparativo Direto
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-brand-teal/20 text-brand-teal border border-brand-teal/40 text-[10px] font-extrabold uppercase tracking-wider">
-                    Recomendado
-                  </span>
+                  <h2 className="font-display text-[32px] md:text-[40px] font-bold tracking-tight mb-4">
+                    VetPro Orienta <span className="text-brand-text-muted font-normal">vs.</span> Busca no <span className="font-display font-extrabold tracking-tight inline-flex items-baseline"><span className="text-[#4285F4]">G</span><span className="text-[#EA4335]">o</span><span className="text-[#FBBC05]">o</span><span className="text-[#4285F4]">g</span><span className="text-[#34A853]">l</span><span className="text-[#EA4335]">e</span></span>
+                  </h2>
+                  <p className="text-brand-text-muted text-[15px] md:text-[16px] leading-relaxed">
+                    Pesquisar sinais clínicos soltos em buscadores genéricos expõe o tutor a receitas caseiras perigosas, diagnósticos alarmistas e perda de tempo crítico. Entenda as diferenças fundamentais:
+                  </p>
                 </div>
 
-                {/* Mockup Visual de Chat VetPro */}
-                <div className="rounded-xl bg-brand-bg/90 border border-brand-teal/30 p-3.5 mb-6 text-xs space-y-2.5">
-                  <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-brand-teal/10 border border-brand-teal/20 text-brand-teal text-[11px] font-semibold">
-                    <span className="flex items-center gap-1.5">
-                      <PawPrint className="w-3.5 h-3.5" /> Prontuário: Thor • Golden Retriever
-                    </span>
-                    <span className="text-[10px] text-brand-text-muted">3 anos • 32 kg</span>
-                  </div>
-                  <div className="p-3 rounded-lg bg-brand-surface border border-brand-border-strong text-brand-text text-[11px] leading-relaxed">
-                    <div className="flex items-center gap-1.5 font-bold text-brand-teal mb-1">
-                      <BrainCircuit className="w-3.5 h-3.5" /> Anamnese Ativa & Complementar:
+                {/* Cards Lado a Lado */}
+                <div className="grid lg:grid-cols-2 gap-8 mb-12">
+                  
+                  {/* LADO 1: Busca Genérica no Google */}
+                  <div className="rounded-[24px] p-7 md:p-8 bg-brand-surface/80 border-2 border-red-500/30 shadow-xl shadow-red-500/5 flex flex-col justify-between relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-40 h-40 bg-[#4285F4]/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-[#EA4335]/10 rounded-full blur-3xl pointer-events-none" />
+                    
+                    <div>
+                      {/* Header do Card Google com Logo Oficial */}
+                      <div className="flex items-center justify-between gap-3 mb-6 pb-4 border-b border-brand-border-strong">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-white shadow-md border border-zinc-200 flex items-center justify-center font-bold text-lg">
+                            <span className="font-display font-bold text-[#4285F4]">G</span>
+                          </div>
+                          <div>
+                            <h3 className="font-display font-bold text-lg text-brand-text flex items-center gap-1.5">
+                              Busca no <span className="font-extrabold tracking-tight"><span className="text-[#4285F4]">G</span><span className="text-[#EA4335]">o</span><span className="text-[#FBBC05]">o</span><span className="text-[#4285F4]">g</span><span className="text-[#34A853]">l</span><span className="text-[#EA4335]">e</span></span>
+                            </h3>
+                            <p className="text-[11px] text-red-400 font-medium">Algoritmo genérico, automedicação e pânico</p>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 text-[10px] font-extrabold uppercase tracking-wider">
+                          Alto Risco
+                        </span>
+                      </div>
+
+                      {/* Mockup Visual com a Cara Autêntica do Google Search */}
+                      <div className="rounded-2xl bg-zinc-900 border border-zinc-700/80 shadow-2xl p-4 mb-6 text-xs space-y-3">
+                        
+                        {/* Barra de Endereço do Navegador */}
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-800/80 border border-zinc-700 text-[11px] text-zinc-400 font-mono">
+                          <span className="text-zinc-500">🔒</span>
+                          <span className="text-zinc-300">google.com.br</span>
+                          <span className="text-zinc-500 truncate">/search?q=meu+cachorro+vomitou+amarelo+e+esta+tremendo</span>
+                        </div>
+
+                        {/* Logo Google Mini e Barra de Pesquisa Estilo Google */}
+                        <div className="bg-white rounded-2xl p-3.5 shadow-md border border-zinc-200 space-y-2.5 text-zinc-800">
+                          <div className="flex items-center justify-center gap-1 pb-1">
+                            <span className="font-display font-bold text-base tracking-tight select-none">
+                              <span className="text-[#4285F4]">G</span>
+                              <span className="text-[#EA4335]">o</span>
+                              <span className="text-[#FBBC05]">o</span>
+                              <span className="text-[#4285F4]">g</span>
+                              <span className="text-[#34A853]">l</span>
+                              <span className="text-[#EA4335]">e</span>
+                            </span>
+                          </div>
+
+                          {/* Google Search Bar com microfone e lens */}
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-full bg-zinc-50 border border-zinc-300 shadow-inner text-zinc-700">
+                            <div className="flex items-center gap-2 truncate">
+                              <Search className="w-3.5 h-3.5 text-[#9AA0A6] shrink-0" />
+                              <span className="text-[11px] font-medium truncate text-zinc-800">&quot;meu cachorro vomitou amarelo e está tremendo&quot;</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <div className="w-4 h-4 rounded-full flex items-center justify-center" title="Pesquisa por voz Google">
+                                <span className="text-[10px]">🎙️</span>
+                              </div>
+                              <div className="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" title="Google Lens">
+                                <span className="text-[#4285F4] font-bold">📷</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Botões clássicos de pesquisa do Google */}
+                          <div className="flex items-center justify-center gap-2 pt-1">
+                            <span className="px-2.5 py-1 rounded bg-[#f8f9fa] border border-[#dadce0] text-[#3c4043] text-[10px] font-medium shadow-2xs">
+                              Pesquisa Google
+                            </span>
+                            <span className="px-2.5 py-1 rounded bg-[#f8f9fa] border border-[#dadce0] text-[#3c4043] text-[10px] font-medium shadow-2xs">
+                              Estou com sorte
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Resultados Simulados de Busca do Google */}
+                        <div className="space-y-2">
+                          <div className="p-2.5 rounded-xl bg-red-950/40 border border-red-500/40 text-red-200 text-[11px] leading-snug">
+                            <div className="flex items-center gap-1 text-[10px] text-zinc-400 font-mono mb-0.5 truncate">
+                              <span className="text-zinc-500">https://forum-pets-livre.com</span> › posts › duvida-8492
+                            </div>
+                            <div className="font-bold text-[#8ab4f8] hover:underline cursor-pointer text-xs mb-1 flex items-center gap-1">
+                              Remédios caseiros para vômito em cães: o que dar em casa?
+                            </div>
+                            <p className="text-[11px] text-zinc-300">
+                              &quot;...para induzir vômito rápido, dê 1 colher de água oxigenada 10 volumes ou azeite de cozinha no fundo da garganta...&quot;
+                            </p>
+                            <div className="mt-1.5 p-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-[10px] font-semibold flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" />
+                              <span>PERIGO REAL: Causa gastrite química ulcerativa, pneumonia aspirativa e intoxicação letal.</span>
+                            </div>
+                          </div>
+
+                          <div className="p-2.5 rounded-xl bg-zinc-800/80 border border-zinc-700 text-zinc-300 text-[11px] leading-snug">
+                            <div className="flex items-center gap-1 text-[10px] text-zinc-400 font-mono mb-0.5 truncate">
+                              <span className="text-zinc-500">https://blog-animais-urgente.org</span> › saude-canina
+                            </div>
+                            <div className="font-bold text-[#8ab4f8] hover:underline cursor-pointer text-xs mb-0.5">
+                              Tremores em cães: 45 possíveis causas graves e terminais
+                            </div>
+                            <p className="text-[10.5px] text-zinc-400">
+                              &quot;Tremores podem indicar cinomose fatal, tumor cerebral ou falência hepática (sem saber o peso, a raça, se tomou vacinas ou se comeu veneno)...&quot;
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Lista de Desvantagens */}
+                      <ul className="space-y-3.5 text-xs text-brand-text-muted">
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <XCircle className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Zero Contexto Clínico do Animal:</strong> O Google não sabe o peso exato, espécie (cão ou gato), raça, idade ou histórico de vacinas e alergias.
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <XCircle className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Risco Fatal de Automedicação:</strong> Medicamentos humanos comuns (como paracetamol, diclofenaco ou dipirona em doses erradas) são letais para pets.
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <XCircle className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Alarmismo & Pânico Psicológico:</strong> Apresenta diagnósticos catastróficos que desesperam a família sem nenhuma conduta prática.
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <XCircle className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Busca Estática e Passiva:</strong> Ninguém faz perguntas de retorno para checar se a gengiva está branca, se há febre ou dor abdominal.
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <XCircle className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Perda de Tempo Fatal:</strong> Em casos de torção gástrica, obstrução ou choque, horas gastas na web reduzem a chance de sobrevivência.
+                          </div>
+                        </li>
+                      </ul>
                     </div>
-                    &quot;Identifiquei o vômito amarelado no Thor (32kg). Como ele é jovem e de porte grande, preciso saber: 
-                    <br /><b>1.</b> Ele teve acesso a lixo, ossos ou plantas tóxicas?
-                    <br /><b>2.</b> A gengiva dele está rosada ou pálida/esbranquiçada?
-                    <br /><b>3.</b> O abdômen parece rígido ou com dor ao toque?&quot;
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-brand-teal font-medium px-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-brand-teal shrink-0" />
-                    Base médica estruturada • Alerta ético de atendimento presencial imediato
+
+                  {/* LADO 2: VetPro Orienta */}
+                  <div className="rounded-[24px] p-7 md:p-8 bg-gradient-to-b from-brand-surface to-brand-surface-2 border border-brand-teal/40 shadow-2xl shadow-brand-teal/10 flex flex-col justify-between relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-teal/10 rounded-full blur-3xl pointer-events-none" />
+                    
+                    <div>
+                      {/* Header do Card VetPro */}
+                      <div className="flex items-center justify-between gap-3 mb-6 pb-4 border-b border-brand-border-strong">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-brand-teal/20 text-brand-teal flex items-center justify-center font-bold">
+                            <Stethoscope className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="font-display font-bold text-lg text-brand-text flex items-center gap-2">
+                              Teleorientação VetPro Orienta
+                            </h3>
+                            <p className="text-[11px] text-brand-teal font-medium">Anamnese ativa, base veterinária e ética</p>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full bg-brand-teal/20 text-brand-teal border border-brand-teal/40 text-[10px] font-extrabold uppercase tracking-wider">
+                          Recomendado
+                        </span>
+                      </div>
+
+                      {/* Mockup Visual de Chat VetPro */}
+                      <div className="rounded-xl bg-brand-bg/90 border border-brand-teal/30 p-3.5 mb-6 text-xs space-y-2.5">
+                        <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-brand-teal/10 border border-brand-teal/20 text-brand-teal text-[11px] font-semibold">
+                          <span className="flex items-center gap-1.5">
+                            <PawPrint className="w-3.5 h-3.5" /> Prontuário: Thor • Golden Retriever
+                          </span>
+                          <span className="text-[10px] text-brand-text-muted">3 anos • 32 kg</span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-brand-surface border border-brand-border-strong text-brand-text text-[11px] leading-relaxed">
+                          <div className="flex items-center gap-1.5 font-bold text-brand-teal mb-1">
+                            <BrainCircuit className="w-3.5 h-3.5" /> Anamnese Ativa & Complementar:
+                          </div>
+                          &quot;Identifiquei o vômito amarelado no Thor (32kg). Como ele é jovem e de porte grande, preciso saber: 
+                          <br /><b>1.</b> Ele teve acesso a lixo, ossos ou plantas tóxicas?
+                          <br /><b>2.</b> A gengiva dele está rosada ou pálida/esbranquiçada?
+                          <br /><b>3.</b> O abdômen parece rígido ou com dor ao toque?&quot;
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-brand-teal font-medium px-1">
+                          <ShieldCheck className="w-3.5 h-3.5 text-brand-teal shrink-0" />
+                          Base médica estruturada • Alerta ético de atendimento presencial imediato
+                        </div>
+                      </div>
+
+                      {/* Lista de Vantagens */}
+                      <ul className="space-y-3.5 text-xs text-brand-text-muted">
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Anamnese Ativa & Direcionada:</strong> A IA conduz uma conversa interativa fazendo perguntas direcionadas para afunilar a queixa e complementar a avaliação.
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Prontuário Individualizado:</strong> Todas as orientações respeitam espécie, raça, idade, peso exato e histórico de saúde cadastrado no perfil do seu pet.
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Suporte a Envio de Exames & Fotos:</strong> Permite anexar laudos de exames laboratoriais, de imagem e fotos de sinais clínicos para enriquecer a triagem.
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">Base Médica-Veterinária Estruturada:</strong> Conteúdos revisados dentro da medicina veterinária com foco estrito em segurança e prevenção de automedicação.
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <strong className="text-brand-text font-semibold">GPS para Hospitais 24h & Pronto-Socorro:</strong> Em caso de urgência, fornece a rota mais rápida no Google Maps e contato para checar plantão.
+                          </div>
+                        </li>
+                      </ul>
+                    </div>
                   </div>
+
                 </div>
 
-                {/* Lista de Vantagens */}
-                <ul className="space-y-3.5 text-xs text-brand-text-muted">
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
+                {/* Tabela Resumo Rápida de Comparação */}
+                <div className="bg-brand-surface rounded-[20px] border border-brand-border-strong p-6 md:p-8 overflow-x-auto">
+                  <div className="flex items-center gap-2 mb-6">
+                    <Sparkles className="w-5 h-5 text-brand-teal" />
+                    <h3 className="font-display font-bold text-base md:text-lg text-brand-text">
+                      Quadro Comparativo: Critérios de Decisão Clínica
+                    </h3>
+                  </div>
+
+                  <div className="min-w-[620px] divide-y divide-brand-border-strong text-xs">
+                    <div className="grid grid-cols-12 pb-3 font-bold text-brand-text-muted uppercase tracking-wider text-[11px]">
+                      <div className="col-span-4">Critério de Avaliação</div>
+                      <div className="col-span-4 text-red-400 flex items-center gap-1.5">
+                        <XCircle className="w-3.5 h-3.5" /> Busca no <span className="font-extrabold tracking-tight inline-flex items-baseline"><span className="text-[#4285F4]">G</span><span className="text-[#EA4335]">o</span><span className="text-[#FBBC05]">o</span><span className="text-[#4285F4]">g</span><span className="text-[#34A853]">l</span><span className="text-[#EA4335]">e</span></span>
+                      </div>
+                      <div className="col-span-4 text-brand-teal flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> VetPro Orienta
+                      </div>
                     </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Anamnese Ativa & Direcionada:</strong> A IA conduz uma conversa interativa fazendo perguntas direcionadas para afunilar a queixa e complementar a avaliação.
+
+                    <div className="grid grid-cols-12 py-3.5 items-center">
+                      <div className="col-span-4 font-semibold text-brand-text">Contexto e Prontuário do Pet</div>
+                      <div className="col-span-4 text-brand-text-muted">Nenhum. Respostas genéricas para a web inteira.</div>
+                      <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                        <Check className="w-4 h-4 shrink-0" /> Prontuário com peso, raça, idade e histórico.
+                      </div>
                     </div>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
+
+                    <div className="grid grid-cols-12 py-3.5 items-center">
+                      <div className="col-span-4 font-semibold text-brand-text">Interatividade na Anamnese</div>
+                      <div className="col-span-4 text-brand-text-muted">Passiva. Tutor lê dezenas de links divergentes.</div>
+                      <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                        <Check className="w-4 h-4 shrink-0" /> Conversa ativa com perguntas direcionadas.
+                      </div>
                     </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Prontuário Individualizado:</strong> Todas as orientações respeitam espécie, raça, idade, peso exato e histórico de saúde cadastrado no perfil do seu pet.
+
+                    <div className="grid grid-cols-12 py-3.5 items-center">
+                      <div className="col-span-4 font-semibold text-brand-text">Leitura de Exames e Fotos</div>
+                      <div className="col-span-4 text-brand-text-muted">Não analisa arquivos ou laudos clínicos.</div>
+                      <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                        <Check className="w-4 h-4 shrink-0" /> Interpretação de laudos e fotos para triagem.
+                      </div>
                     </div>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
+
+                    <div className="grid grid-cols-12 py-3.5 items-center">
+                      <div className="col-span-4 font-semibold text-brand-text">Segurança contra Automedicação</div>
+                      <div className="col-span-4 text-brand-text-muted">Alto risco de receitas caseiras e doses tóxicas.</div>
+                      <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                        <Check className="w-4 h-4 shrink-0" /> Bloqueio de automedicação e alerta ético.
+                      </div>
                     </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Suporte a Envio de Exames & Fotos:</strong> Permite anexar laudos de exames laboratoriais, de imagem e fotos de sinais clínicos para enriquecer a triagem.
+
+                    <div className="grid grid-cols-12 py-3.5 items-center">
+                      <div className="col-span-4 font-semibold text-brand-text">Encaminhamento para Emergências</div>
+                      <div className="col-span-4 text-brand-text-muted">Anúncios genéricos sem checagem de proximidade.</div>
+                      <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
+                        <Check className="w-4 h-4 shrink-0" /> Hospitais 24h com rotas GPS no Google Maps.
+                      </div>
                     </div>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">Base Médica-Veterinária Estruturada:</strong> Conteúdos revisados dentro da medicina veterinária com foco estrito em segurança e prevenção de automedicação.
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-brand-teal/20 text-brand-teal flex items-center justify-center shrink-0 mt-0.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <strong className="text-brand-text font-semibold">GPS para Hospitais 24h & Pronto-Socorro:</strong> Em caso de urgência, fornece a rota mais rápida no Google Maps e contato para checar plantão.
-                    </div>
-                  </li>
-                </ul>
+                  </div>
+
+                  <div className="mt-8 pt-6 border-t border-brand-border-strong flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <p className="text-xs text-brand-text-muted text-center sm:text-left">
+                      Proteja quem você mais ama com orientação séria e responsável, por apenas <strong className="text-brand-text">R$ 9,90/mês</strong>.
+                    </p>
+                    <a
+                      href="#planos"
+                      className="px-6 py-3 rounded-full bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-all shadow-md shrink-0 flex items-center gap-2"
+                    >
+                      <span>Assinar Plano com Segurança</span>
+                      <PawPrint className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
 
           </div>
-
-          {/* Tabela Resumo Rápida de Comparação */}
-          <div className="bg-brand-surface rounded-[20px] border border-brand-border-strong p-6 md:p-8 overflow-x-auto">
-            <div className="flex items-center gap-2 mb-6">
-              <Sparkles className="w-5 h-5 text-brand-teal" />
-              <h3 className="font-display font-bold text-base md:text-lg text-brand-text">
-                Quadro Comparativo: Critérios de Decisão Clínica
-              </h3>
-            </div>
-
-            <div className="min-w-[620px] divide-y divide-brand-border-strong text-xs">
-              <div className="grid grid-cols-12 pb-3 font-bold text-brand-text-muted uppercase tracking-wider text-[11px]">
-                <div className="col-span-4">Critério de Avaliação</div>
-                <div className="col-span-4 text-red-400 flex items-center gap-1.5">
-                  <XCircle className="w-3.5 h-3.5" /> Busca no Google
-                </div>
-                <div className="col-span-4 text-brand-teal flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> VetPro Orienta
-                </div>
-              </div>
-
-              <div className="grid grid-cols-12 py-3.5 items-center">
-                <div className="col-span-4 font-semibold text-brand-text">Contexto e Prontuário do Pet</div>
-                <div className="col-span-4 text-brand-text-muted">Nenhum. Respostas genéricas para a web inteira.</div>
-                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
-                  <Check className="w-4 h-4 shrink-0" /> Prontuário com peso, raça, idade e histórico.
-                </div>
-              </div>
-
-              <div className="grid grid-cols-12 py-3.5 items-center">
-                <div className="col-span-4 font-semibold text-brand-text">Interatividade na Anamnese</div>
-                <div className="col-span-4 text-brand-text-muted">Passiva. Tutor lê dezenas de links divergentes.</div>
-                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
-                  <Check className="w-4 h-4 shrink-0" /> Conversa ativa com perguntas direcionadas.
-                </div>
-              </div>
-
-              <div className="grid grid-cols-12 py-3.5 items-center">
-                <div className="col-span-4 font-semibold text-brand-text">Leitura de Exames e Fotos</div>
-                <div className="col-span-4 text-brand-text-muted">Não analisa arquivos ou laudos clínicos.</div>
-                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
-                  <Check className="w-4 h-4 shrink-0" /> Interpretação de laudos e fotos para triagem.
-                </div>
-              </div>
-
-              <div className="grid grid-cols-12 py-3.5 items-center">
-                <div className="col-span-4 font-semibold text-brand-text">Segurança contra Automedicação</div>
-                <div className="col-span-4 text-brand-text-muted">Alto risco de receitas caseiras e doses tóxicas.</div>
-                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
-                  <Check className="w-4 h-4 shrink-0" /> Bloqueio de automedicação e alerta ético.
-                </div>
-              </div>
-
-              <div className="grid grid-cols-12 py-3.5 items-center">
-                <div className="col-span-4 font-semibold text-brand-text">Encaminhamento para Emergências</div>
-                <div className="col-span-4 text-brand-text-muted">Anúncios genéricos sem checagem de proximidade.</div>
-                <div className="col-span-4 text-brand-text font-medium flex items-center gap-1.5 text-brand-teal">
-                  <Check className="w-4 h-4 shrink-0" /> Hospitais 24h com rotas GPS no Google Maps.
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-brand-border-strong flex flex-col sm:flex-row items-center justify-between gap-4">
-              <p className="text-xs text-brand-text-muted text-center sm:text-left">
-                Proteja quem você mais ama com orientação séria e responsável, por apenas <strong className="text-brand-text">R$ 9,90/mês</strong>.
-              </p>
-              <a
-                href="#planos"
-                className="px-6 py-3 rounded-full bg-brand-teal text-brand-bg font-bold text-xs hover:bg-brand-teal/90 transition-all shadow-md shrink-0 flex items-center gap-2"
-              >
-                <span>Assinar Plano com Segurança</span>
-                <PawPrint className="w-3.5 h-3.5" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Dobra: Para Quem É */}
       <section id="para-quem" className="py-24 relative overflow-hidden">
