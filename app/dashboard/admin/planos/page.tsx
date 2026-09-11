@@ -93,15 +93,25 @@ export default function AdminPlanosPage() {
 
   const handleToggleActive = async (plan: Plan) => {
     const updated = { ...plan, is_active: !plan.is_active };
-    // Atualização otimista imediata na UI
-    setPlans(prev => prev.map(p => (p.id === plan.id || (plan.db_id && p.db_id === plan.db_id) ? updated : p)));
+    setPlans(prev => {
+      const next = prev.map(p => (p.id === plan.id || (plan.db_id && p.db_id === plan.db_id) || p.slug === plan.slug ? updated : p));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vetpro_cached_plans', JSON.stringify(next));
+      }
+      return next;
+    });
     await handleSavePlan(updated, false);
   };
 
   const handleToggleComingSoon = async (plan: Plan) => {
     const updated = { ...plan, is_coming_soon: !plan.is_coming_soon };
-    // Atualização otimista imediata na UI
-    setPlans(prev => prev.map(p => (p.id === plan.id || (plan.db_id && p.db_id === plan.db_id) ? updated : p)));
+    setPlans(prev => {
+      const next = prev.map(p => (p.id === plan.id || (plan.db_id && p.db_id === plan.db_id) || p.slug === plan.slug ? updated : p));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vetpro_cached_plans', JSON.stringify(next));
+      }
+      return next;
+    });
     await handleSavePlan(updated, false);
   };
 
@@ -142,6 +152,12 @@ export default function AdminPlanosPage() {
       const data = await res.json();
       if (data.success) {
         setFeedback({ type: 'success', message: `Plano "${planToSave.name}" atualizado com sucesso!` });
+        if (data.plans && Array.isArray(data.plans)) {
+          setPlans(data.plans);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('vetpro_cached_plans', JSON.stringify(data.plans));
+          }
+        }
         if (closeModal) setIsModalOpen(false);
         await fetchPlans();
       } else {

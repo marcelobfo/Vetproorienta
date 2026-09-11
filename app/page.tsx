@@ -218,7 +218,7 @@ export default function LandingPage() {
             features: (Array.isArray(rawAnual?.features) && rawAnual.features.length > 0) ? rawAnual.features : defaultFeaturesMap['anual-promocional']
           });
 
-          // 3. Especialista
+          // 3. Especialista (Plano de R$ 29,90 - Sempre 'Em Breve' e desabilitado para compra na Home)
           const rawEsp = slotMap['especialista'];
           resolvedPlans.push({
             id: 'especialista',
@@ -230,7 +230,7 @@ export default function LandingPage() {
             period: '/mês',
             billing_cycle: 'MONTHLY',
             comparison_badge: '',
-            is_coming_soon: rawEsp ? (rawEsp.is_coming_soon !== false) : true,
+            is_coming_soon: true, // Sempre Em Breve na vitrine pública para nunca liberar checkout indevido
             is_popular: false,
             features: (Array.isArray(rawEsp?.features) && rawEsp.features.length > 0) ? rawEsp.features : defaultFeaturesMap.especialista
           });
@@ -352,6 +352,11 @@ export default function LandingPage() {
     }
 
     const planObj = dynamicPlans.find(p => p.id === selectedPlan) || dynamicPlans[0];
+    if (planObj?.is_coming_soon) {
+      setSubmitError('Este plano estará disponível em breve e não aceita contratações no momento.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
