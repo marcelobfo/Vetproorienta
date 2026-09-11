@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient, getSupabaseAdminClient, isSupabaseConfigured } from '@/lib/supabase';
-import { getAsaasBaseUrl, getAsaasConfig, directCreateAsaasCustomer, directCreateAsaasSubscription } from '@/lib/asaas';
+import { 
+  getAsaasBaseUrl, 
+  getAsaasConfig, 
+  directCreateAsaasCustomer, 
+  directCreateAsaasSubscription,
+  resolvePlanDetails
+} from '@/lib/asaas';
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,9 +63,12 @@ export async function POST(req: NextRequest) {
     let targetPaymentId = paymentId;
     let targetEmail = (email || holderInfo?.email || '').trim().toLowerCase();
     let targetUserId = userId;
-    let selectedPlan = planId === 'especialista' ? 'especialista' : 'essencial';
-    let selectedPlanName = planName || (selectedPlan === 'especialista' ? 'Especialista' : 'Essencial');
-    let numericPrice = Number(planPrice) || (selectedPlan === 'especialista' ? 29.90 : 9.90);
+    
+    let resolvedPlan = resolvePlanDetails(planId, planPrice, planName);
+    let selectedPlan = resolvedPlan.id;
+    let selectedPlanName = resolvedPlan.name;
+    let numericPrice = resolvedPlan.price;
+    let subscriptionCycle = resolvedPlan.cycle;
 
     const customSupabaseUrl = clientSupabaseConfig?.url;
     const customSupabaseAnonKey = clientSupabaseConfig?.anonKey;
@@ -153,14 +162,15 @@ export async function POST(req: NextRequest) {
       targetDate.setDate(targetDate.getDate() + 1);
       const nextDueDate = targetDate.toISOString().split('T')[0];
 
+      const cycleText = subscriptionCycle === 'YEARLY' ? 'ano' : 'mês';
       const subRes = await directCreateAsaasSubscription(
         {
           customer: targetCustomerId,
           billingType: 'CREDIT_CARD',
           value: numericPrice,
           nextDueDate,
-          cycle: 'MONTHLY',
-          description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta (Cartão)`,
+          cycle: subscriptionCycle,
+          description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta (R$ ${numericPrice.toFixed(2)}/${cycleText} no Cartão)`,
           externalReference: `sub_card_${selectedPlan}_${targetUserId || targetCustomerId}`,
         },
         mergedAsaasConfig

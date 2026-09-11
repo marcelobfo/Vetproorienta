@@ -5,7 +5,8 @@ import {
   getAsaasBaseUrl, 
   getAsaasConfig, 
   directCreateAsaasCustomer, 
-  directCreateAsaasSubscription 
+  directCreateAsaasSubscription,
+  resolvePlanDetails
 } from '@/lib/asaas';
 
 export async function POST(req: NextRequest) {
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
       planId, 
       planName, 
       planPrice, 
+      billingCycle: requestedBillingCycle,
       billingType: requestedBillingType,
       forceNewCharge,
       asaasConfig: clientAsaasConfig,
@@ -60,9 +62,13 @@ export async function POST(req: NextRequest) {
     let targetName = (name || '').trim();
     let targetCpf = (cpfCnpj || '').replace(/\D/g, '');
     let targetPhone = (phone || '').replace(/\D/g, '');
-    let selectedPlan = planId === 'especialista' ? 'especialista' : 'essencial';
-    let selectedPlanName = planName || (selectedPlan === 'especialista' ? 'Especialista' : 'Essencial');
-    let numericPrice = Number(planPrice) || (selectedPlan === 'especialista' ? 29.90 : 9.90);
+
+    // Resolve o plano de forma completa e consistente
+    let resolvedPlan = resolvePlanDetails(planId, planPrice, planName, requestedBillingCycle);
+    let selectedPlan = resolvedPlan.id;
+    let selectedPlanName = resolvedPlan.name;
+    let numericPrice = resolvedPlan.price;
+    let subscriptionCycle = resolvedPlan.cycle;
 
     // 1. Tenta recuperar dados do usuário no Supabase se não fornecidos
     const customSupabaseUrl = clientSupabaseConfig?.url;
@@ -99,9 +105,13 @@ export async function POST(req: NextRequest) {
             targetCpf = String(profile.cpf || profile.cpf_cnpj).replace(/\D/g, '');
           }
           if (!targetPhone && profile.phone) targetPhone = String(profile.phone).replace(/\D/g, '');
-          if (!planId && profile.plan_id) selectedPlan = profile.plan_id;
-          if (!planName && (profile.plan_name || profile.plan_selected)) {
-            selectedPlanName = profile.plan_name || profile.plan_selected;
+          
+          if (!planId && (profile.plan_id || profile.plan_selected)) {
+            resolvedPlan = resolvePlanDetails(profile.plan_id || profile.plan_selected, profile.plan_price, profile.plan_name);
+            selectedPlan = resolvedPlan.id;
+            selectedPlanName = resolvedPlan.name;
+            numericPrice = resolvedPlan.price;
+            subscriptionCycle = resolvedPlan.cycle;
           }
           targetUserId = profile.id;
         }
@@ -297,14 +307,15 @@ export async function POST(req: NextRequest) {
       targetDate.setDate(targetDate.getDate() + 1); // Vencimento em 1 dia
       const nextDueDate = targetDate.toISOString().split('T')[0];
 
+      const cycleText = subscriptionCycle === 'YEARLY' ? 'ano' : 'mês';
       const subRes = await directCreateAsaasSubscription(
         {
           customer: targetCustomerId,
           billingType: (requestedBillingType as any) || 'UNDEFINED',
           value: numericPrice,
           nextDueDate,
-          cycle: 'MONTHLY',
-          description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta (R$ ${numericPrice.toFixed(2)}/mês)`,
+          cycle: subscriptionCycle,
+          description: `Assinatura Plano ${selectedPlanName} - VetPro Orienta (R$ ${numericPrice.toFixed(2)}/${cycleText})`,
           externalReference: `sub_${selectedPlan}_${targetUserId || targetCustomerId}`,
         },
         mergedAsaasConfig

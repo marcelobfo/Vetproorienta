@@ -9,8 +9,66 @@ import {
   Wallet, X, MessageCircle, Send, Smartphone, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { getAsaasConfig, verifyAndUnlockSubscription } from '@/lib/asaas';
+import { getAsaasConfig, verifyAndUnlockSubscription, resolvePlanDetails } from '@/lib/asaas';
 import { getEvolutionConfig } from '@/lib/evolution';
+
+const AVAILABLE_PLANS = [
+  {
+    id: 'essencial',
+    name: 'Essencial Mensal',
+    badge: 'Orientação Contínua',
+    price: 9.90,
+    period: '/mês',
+    billingCycle: 'MONTHLY' as const,
+    billingDesc: 'Cobrança mensal recorrente sem fidelidade',
+    desc: 'Orientação técnica contínua com IA 24h para cães e gatos sem carência.',
+    features: [
+      'Triagem e Anamnese Ativa com IA 24h',
+      'Cadastro e prontuário completo dos seus Pets',
+      'Caderneta de Vacinação Digital com Lembretes',
+      'Radar Comunitário de Pets Perdidos no Bairro',
+      'GPS para Hospitais 24h e Pronto-Socorros',
+    ],
+    isPopular: false,
+  },
+  {
+    id: 'anual-promocional',
+    name: 'Anual Essencial',
+    badge: 'Mais Vendido • Economize 50%',
+    price: 59.90,
+    period: '/ano',
+    billingCycle: 'YEARLY' as const,
+    billingDesc: 'Equivale a apenas R$ 4,99/mês (Economia de 50%)',
+    desc: 'O plano mais econômico: 1 ano completo de tranquilidade e proteção por apenas R$ 4,99 ao mês.',
+    features: [
+      'Economia imediata de 50% em relação ao mensal',
+      'Acesso garantido por 365 dias sem interrupções',
+      'Triagem e Anamnese Ativa com IA 24h Ilimitada',
+      'Caderneta de Vacinas e Lembretes no WhatsApp',
+      'Radar Comunitário de Pets Perdidos no Bairro',
+      'GPS para Hospitais 24h e Pronto-Socorro',
+    ],
+    isPopular: true,
+  },
+  {
+    id: 'especialista',
+    name: 'Especialista',
+    badge: 'Orientação Avançada',
+    price: 29.90,
+    period: '/mês',
+    billingCycle: 'MONTHLY' as const,
+    billingDesc: 'Cobrança mensal recorrente com especialista',
+    desc: 'Apoio técnico veterinário com médico-veterinário especialista dedicado + IA.',
+    features: [
+      'Tudo do Plano Essencial incluído',
+      'Orientação com Médico-Veterinário Especialista',
+      'Prioridade na triagem e suporte clínico',
+      'Segunda opinião em laudos e exames',
+      'Acompanhamento de casos crônicos e idosos',
+    ],
+    isPopular: false,
+  },
+];
 
 interface AsaasPaymentItem {
   id: string;
@@ -47,8 +105,14 @@ export default function AssinaturaPage() {
   const [planId, setPlanId] = useState('essencial');
   const [planName, setPlanName] = useState('Essencial');
   const [planPrice, setPlanPrice] = useState(9.90);
+  const [planBillingCycle, setPlanBillingCycle] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
   const [hasActivePlan, setHasActivePlan] = useState(false);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('PENDING_PAYMENT');
+  
+  // Modal de Troca de Plano
+  const [showChangePlanModal, setShowChangePlanModal] = useState(false);
+  const [targetPlanToChange, setTargetPlanToChange] = useState<typeof AVAILABLE_PLANS[0] | null>(null);
+  const [isChangingPlan, setIsChangingPlan] = useState(false);
   
   const [customerId, setCustomerId] = useState('');
   const [subscriptionId, setSubscriptionId] = useState('');
@@ -254,17 +318,12 @@ export default function AssinaturaPage() {
         let activeUserId = '';
         let activeEmail = localEmail;
 
-        if (localPlan === 'especialista') {
-          setPlanId('especialista');
-          setPlanName('Especialista');
-          setPlanPrice(29.90);
-          setPaymentValue(29.90);
-        } else {
-          setPlanId('essencial');
-          setPlanName('Essencial');
-          setPlanPrice(9.90);
-          setPaymentValue(9.90);
-        }
+        const resolvedLocalPlan = resolvePlanDetails(localPlan);
+        setPlanId(resolvedLocalPlan.id);
+        setPlanName(resolvedLocalPlan.name);
+        setPlanPrice(resolvedLocalPlan.price);
+        setPaymentValue(resolvedLocalPlan.price);
+        setPlanBillingCycle(resolvedLocalPlan.cycle);
 
         if (session) {
           activeUserId = session.user.id;
@@ -290,8 +349,12 @@ export default function AssinaturaPage() {
             setCardHolderCpf(profile.cpf || localCpf || '');
             setCardHolderPhone(profile.phone || localPhone || '');
 
-            if (profile.plan_id) setPlanId(profile.plan_id);
-            if (profile.plan_name) setPlanName(profile.plan_name);
+            const resolvedProfilePlan = resolvePlanDetails(profile.plan_id || profile.plan_name || localPlan, profile.plan_price);
+            setPlanId(resolvedProfilePlan.id);
+            setPlanName(profile.plan_name || resolvedProfilePlan.name);
+            setPlanPrice(resolvedProfilePlan.price);
+            setPaymentValue(resolvedProfilePlan.price);
+            setPlanBillingCycle(resolvedProfilePlan.cycle);
             
             const realCustId = profile.asaas_customer_id || '';
             const realSubId = profile.subscription_id || profile.asaas_subscription_id || '';
@@ -303,14 +366,6 @@ export default function AssinaturaPage() {
             const isDbActive = profile.subscription_status === 'ACTIVE' || profile.subscription_status === 'CONFIRMED' || profile.subscription_status === 'RECEIVED';
             setHasActivePlan(isDbActive);
             setSubscriptionStatus(isDbActive ? 'ACTIVE' : (profile.subscription_status || 'PENDING_PAYMENT'));
-            
-            if (profile.plan_id === 'especialista' || profile.plan_name?.toLowerCase().includes('especialista')) {
-              setPlanPrice(29.90);
-              setPaymentValue(29.90);
-            } else {
-              setPlanPrice(9.90);
-              setPaymentValue(9.90);
-            }
           }
         } else {
           setUserName(localName || 'Tutor');
@@ -477,6 +532,131 @@ export default function AssinaturaPage() {
     }
   };
 
+  // Abre o modal de confirmação para trocar de plano
+  const handleOpenChangePlanModal = (targetPlan: typeof AVAILABLE_PLANS[0]) => {
+    setTargetPlanToChange(targetPlan);
+    setShowChangePlanModal(true);
+  };
+
+  // Executa a troca de plano no Asaas e Supabase
+  const handleConfirmChangePlan = async () => {
+    if (!targetPlanToChange) return;
+
+    setIsChangingPlan(true);
+    setActionFeedback(null);
+    setWhatsappSentSuccess(null);
+
+    try {
+      const localAsaasConfig = getAsaasConfig();
+      const localSupabaseUrl = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_url') || '' : '';
+      const localSupabaseAnonKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_anon_key') || '' : '';
+      const localSupabaseServiceKey = typeof window !== 'undefined' ? localStorage.getItem('vetpro_supabase_service_key') || '' : '';
+
+      const res = await fetch('/api/asaas/change-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          email: userEmail,
+          customerId,
+          currentSubscriptionId: subscriptionId,
+          targetPlanId: targetPlanToChange.id,
+          customPlanPrice: targetPlanToChange.price,
+          customPlanName: targetPlanToChange.name,
+          cpfCnpj: userCpf,
+          name: userName,
+          phone: userPhone,
+          asaasConfig: {
+            apiKey: localAsaasConfig.apiKey,
+            environment: localAsaasConfig.environment,
+            customBaseUrl: localAsaasConfig.customBaseUrl,
+          },
+          supabaseConfig: {
+            url: localSupabaseUrl,
+            anonKey: localSupabaseAnonKey,
+            serviceRoleKey: localSupabaseServiceKey,
+          },
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setPlanId(data.planId);
+        setPlanName(data.planName);
+        setPlanPrice(data.planPrice);
+        setPaymentValue(data.planPrice);
+        setPlanBillingCycle(data.billingCycle || targetPlanToChange.billingCycle);
+
+        if (data.customerId) {
+          setCustomerId(data.customerId);
+          if (typeof window !== 'undefined') localStorage.setItem('vetpro_asaas_customer_id', data.customerId);
+        }
+        if (data.subscriptionId) {
+          setSubscriptionId(data.subscriptionId);
+          if (typeof window !== 'undefined') localStorage.setItem('vetpro_asaas_subscription_id', data.subscriptionId);
+        }
+        if (data.paymentId) {
+          setPaymentId(data.paymentId);
+        }
+        if (data.paymentUrl || data.invoiceUrl) {
+          const url = data.invoiceUrl || data.paymentUrl;
+          setPaymentUrl(url);
+          if (typeof window !== 'undefined') localStorage.setItem('vetpro_payment_url', url);
+        }
+        if (data.bankSlipUrl) {
+          setBankSlipUrl(data.bankSlipUrl);
+          if (typeof window !== 'undefined') localStorage.setItem('vetpro_bank_slip_url', data.bankSlipUrl);
+        }
+        if (data.identificationField) {
+          setIdentificationField(data.identificationField);
+        }
+        if (data.pixQrCodeImage) {
+          setPixQrCode(data.pixQrCodeImage);
+          if (typeof window !== 'undefined') localStorage.setItem('vetpro_pix_qrcode', data.pixQrCodeImage);
+        }
+        if (data.pixCopiaECola) {
+          setPixCopiaECola(data.pixCopiaECola);
+          if (typeof window !== 'undefined') localStorage.setItem('vetpro_pix_copia_cola', data.pixCopiaECola);
+        }
+        if (data.dueDate) {
+          setPaymentDueDate(data.dueDate);
+        }
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('vetpro_selected_plan', data.planId);
+        }
+
+        setShowChangePlanModal(false);
+        setActionFeedback({
+          type: 'success',
+          message: `🎉 Plano alterado com sucesso para ${data.planName}! Sua nova fatura no valor de R$ ${data.planPrice.toFixed(2).replace('.', ',')} foi gerada.`,
+        });
+
+        // Recarrega faturas
+        void fetchInvoices(data.customerId || customerId);
+
+        // Rola até o bloco de pagamento
+        setTimeout(() => {
+          const el = document.getElementById('payment-section');
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }, 300);
+      } else {
+        setActionFeedback({
+          type: 'error',
+          message: data.error || 'Não foi possível alterar o plano no Asaas.',
+        });
+      }
+    } catch (err: any) {
+      setActionFeedback({
+        type: 'error',
+        message: err.message || 'Erro de conexão ao alterar plano.',
+      });
+    } finally {
+      setIsChangingPlan(false);
+    }
+  };
+
   // Função para GERAR FATURA DA ASSINATURA no Asaas
   const handleGenerateInvoice = async (targetPlanId?: string, targetPlanPrice?: number, overrideCpf?: string, overrideName?: string, overridePhone?: string) => {
     const activeCpf = overrideCpf || userCpf;
@@ -496,8 +676,9 @@ export default function AssinaturaPage() {
     setWhatsappSentSuccess(null);
 
     const selectedPlan = targetPlanId || planId;
-    const selectedPrice = targetPlanPrice !== undefined ? targetPlanPrice : planPrice;
-    const selectedName = selectedPlan === 'especialista' ? 'Especialista' : 'Essencial';
+    const resolved = resolvePlanDetails(selectedPlan, targetPlanPrice);
+    const selectedPrice = resolved.price;
+    const selectedName = resolved.name;
 
     try {
       const localAsaasConfig = getAsaasConfig();
@@ -516,7 +697,7 @@ export default function AssinaturaPage() {
           name: activeName || (userEmail ? userEmail.split('@')[0] : 'Tutor VetPro'),
           cpfCnpj: activeCpf,
           phone: activePhone,
-          planId: selectedPlan,
+          planId: resolved.id,
           planName: selectedName,
           planPrice: selectedPrice,
           forceNewCharge: true,
@@ -579,10 +760,11 @@ export default function AssinaturaPage() {
         }
 
         if (targetPlanId) {
-          setPlanId(targetPlanId);
+          setPlanId(resolved.id);
           setPlanName(selectedName);
           setPlanPrice(selectedPrice);
-          if (typeof window !== 'undefined') localStorage.setItem('vetpro_selected_plan', targetPlanId);
+          setPlanBillingCycle(resolved.cycle);
+          if (typeof window !== 'undefined') localStorage.setItem('vetpro_selected_plan', resolved.id);
         }
 
         setShowCpfModal(false);
@@ -936,7 +1118,7 @@ export default function AssinaturaPage() {
           <div className="space-y-2">
             <div className="flex items-center gap-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-brand-text-muted">
-                Plano Selecionado
+                Plano Atual
               </span>
               <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
                 hasActivePlan 
@@ -954,21 +1136,21 @@ export default function AssinaturaPage() {
             </h2>
             <p className="text-xs md:text-sm text-brand-text-muted">
               {hasActivePlan 
-                ? 'Sua assinatura mensal está em dia. Você tem acesso completo a todas as funcionalidades do plano em todo o sistema.' 
+                ? `Sua assinatura ${planBillingCycle === 'YEARLY' ? 'anual' : 'mensal'} está em dia. Você tem acesso completo a todas as funcionalidades do plano em todo o sistema.` 
                 : 'Efetue o pagamento abaixo por Pix, Cartão ou Boleto. Assim que confirmado, todas as telas do sistema são liberadas de uma só vez.'}
             </p>
           </div>
 
-          <div className="bg-brand-surface-2 p-5 rounded-2xl border border-brand-border-strong text-right shrink-0 min-w-[200px]">
+          <div className="bg-brand-surface-2 p-5 rounded-2xl border border-brand-border-strong text-right shrink-0 min-w-[210px]">
             <span className="text-[11px] font-semibold text-brand-text-muted uppercase tracking-wider block mb-1">
-              Valor Recorrente
+              Valor da Assinatura
             </span>
             <div className="text-3xl font-display font-bold text-brand-text">
               R$ {planPrice.toFixed(2).replace('.', ',')}
-              <span className="text-xs text-brand-text-muted font-normal">/mês</span>
+              <span className="text-xs text-brand-text-muted font-normal">{planBillingCycle === 'YEARLY' ? '/ano' : '/mês'}</span>
             </div>
-            <div className="text-[11px] text-brand-text-muted mt-1">
-              Ciclo: Mensal (Asaas)
+            <div className="text-[11px] text-brand-teal font-medium mt-1">
+              {planBillingCycle === 'YEARLY' ? 'Equivale a R$ 4,99/mês (Economia 50%)' : 'Ciclo: Mensal (Asaas)'}
             </div>
           </div>
         </div>
@@ -1002,6 +1184,132 @@ export default function AssinaturaPage() {
               {paymentDueDate ? new Date(paymentDueDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'Imediato / 1 dia'}
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* SEÇÃO DE TROCA DE PLANO / UPGRADE / DOWNGRADE */}
+      <div className="bg-brand-surface border border-brand-border-strong rounded-3xl p-6 md:p-8 space-y-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-brand-border-strong">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-teal/10 text-brand-teal text-xs font-bold uppercase tracking-wider mb-2">
+              <Sparkles className="w-3.5 h-3.5" /> Planos & Upgrade
+            </div>
+            <h3 className="text-xl md:text-2xl font-display font-bold text-brand-text">
+              Alterar ou Fazer Upgrade do seu Plano
+            </h3>
+            <p className="text-xs md:text-sm text-brand-text-muted mt-1">
+              Troque seu plano a qualquer momento. Ao mudar, sua assinatura anterior é substituída com segurança no Asaas.
+            </p>
+          </div>
+        </div>
+
+        {/* Grid de Cards de Planos para Troca / Upgrade */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {AVAILABLE_PLANS.map((plan) => {
+            const isCurrent = planId === plan.id || 
+              (plan.id === 'essencial' && (planId === 'essencial' || planName.toLowerCase().includes('essencial') && !planName.toLowerCase().includes('anual') && planPrice < 20)) ||
+              (plan.id === 'anual-promocional' && (planId === 'anual-promocional' || planId === 'anual' || planName.toLowerCase().includes('anual') || planPrice > 50 && planPrice < 70)) ||
+              (plan.id === 'especialista' && (planId === 'especialista' || planName.toLowerCase().includes('especialista')));
+
+            const isUpgrade = !isCurrent && (
+              (plan.id === 'anual-promocional') || 
+              (plan.id === 'especialista' && planId !== 'anual-promocional')
+            );
+
+            return (
+              <div
+                key={plan.id}
+                className={`relative rounded-2xl p-6 border flex flex-col justify-between transition-all ${
+                  isCurrent
+                    ? 'bg-brand-teal/10 border-brand-teal shadow-lg ring-2 ring-brand-teal/40'
+                    : plan.isPopular
+                      ? 'bg-gradient-to-b from-brand-surface to-brand-surface-2 border-brand-accent/60 shadow-md ring-1 ring-brand-accent/20'
+                      : 'bg-brand-surface-2 border-brand-border-strong hover:border-brand-border'
+                }`}
+              >
+                {/* Badges de Destaque */}
+                <div className="absolute -top-3 right-4 flex items-center gap-1.5">
+                  {isCurrent && (
+                    <span className="bg-brand-teal text-brand-bg text-[10.5px] font-extrabold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-md flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Plano Atual
+                    </span>
+                  )}
+                  {plan.isPopular && !isCurrent && (
+                    <span className="bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink text-[10.5px] font-extrabold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-md flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" /> Mais Vendido
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <div className="mb-2">
+                    <span className="text-[11px] font-bold text-brand-teal uppercase tracking-wider block">
+                      {plan.badge}
+                    </span>
+                    <h4 className="font-display text-xl font-bold text-brand-text">
+                      {plan.name}
+                    </h4>
+                  </div>
+
+                  <p className="text-xs text-brand-text-muted mb-4 leading-relaxed">
+                    {plan.desc}
+                  </p>
+
+                  <div className="flex items-baseline gap-1 mb-1">
+                    <span className="text-xs font-semibold text-brand-text-muted">R$</span>
+                    <span className="font-display text-3xl font-extrabold text-brand-text tracking-tight">
+                      {plan.price.toFixed(2).replace('.', ',')}
+                    </span>
+                    <span className="text-xs text-brand-text-muted">{plan.period}</span>
+                  </div>
+
+                  <div className="text-[11px] text-brand-teal font-medium mb-5 pb-3 border-b border-brand-border-strong">
+                    {plan.billingDesc}
+                  </div>
+
+                  {/* Lista de Recursos */}
+                  <ul className="space-y-2.5 mb-6 text-xs text-brand-text">
+                    {plan.features.map((feat, fIdx) => (
+                      <li key={fIdx} className="flex items-start gap-2">
+                        <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${isCurrent ? 'text-brand-teal' : 'text-brand-text-muted'}`} />
+                        <span className="leading-tight">{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Botão de Ação */}
+                <div>
+                  {isCurrent ? (
+                    <div className="w-full py-2.5 rounded-xl font-display font-bold text-xs bg-brand-teal/20 text-brand-teal border border-brand-teal/40 flex items-center justify-center gap-1.5 cursor-default">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Plano Atual Contratado</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenChangePlanModal(plan)}
+                      disabled={isChangingPlan}
+                      className={`w-full py-3 rounded-xl font-display font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 ${
+                        isUpgrade
+                          ? 'bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink hover:opacity-95 shadow-brand-accent/20'
+                          : 'bg-brand-surface hover:bg-brand-surface-2 text-brand-text border border-brand-border-strong hover:border-brand-teal'
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>
+                        {isUpgrade 
+                          ? plan.id === 'anual-promocional'
+                            ? 'Fazer Upgrade (Economize 50%)'
+                            : `Fazer Upgrade para ${plan.name}`
+                          : `Mudar para ${plan.name}`}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -1654,6 +1962,88 @@ export default function AssinaturaPage() {
           </div>
         )}
       </div>
+
+      {/* Modal de Confirmação de Troca de Plano / Upgrade */}
+      {showChangePlanModal && targetPlanToChange && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-brand-surface border border-brand-teal/40 rounded-3xl p-6 md:p-8 w-full max-w-lg space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between pb-3 border-b border-brand-border-strong">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-brand-teal/20 text-brand-teal flex items-center justify-center">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <h3 className="font-display font-bold text-lg text-brand-text">
+                  Confirmar Alteração de Plano
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowChangePlanModal(false)}
+                disabled={isChangingPlan}
+                className="p-1 text-brand-text-muted hover:text-brand-text"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Comparativo Visual De -> Para */}
+            <div className="grid grid-cols-2 gap-3 p-4 bg-brand-surface-2 rounded-2xl border border-brand-border-strong">
+              <div className="space-y-1">
+                <span className="text-[10.5px] uppercase font-bold text-brand-text-muted">Plano Atual</span>
+                <p className="font-bold text-sm text-brand-text">{planName}</p>
+                <p className="text-xs text-brand-text-muted font-mono">
+                  R$ {planPrice.toFixed(2).replace('.', ',')}{planBillingCycle === 'YEARLY' ? '/ano' : '/mês'}
+                </p>
+              </div>
+
+              <div className="space-y-1 border-l border-brand-border pl-3">
+                <span className="text-[10.5px] uppercase font-bold text-brand-teal">Novo Plano Escolhido</span>
+                <p className="font-bold text-sm text-brand-teal">{targetPlanToChange.name}</p>
+                <p className="text-xs text-brand-teal font-mono font-bold">
+                  R$ {targetPlanToChange.price.toFixed(2).replace('.', ',')}{targetPlanToChange.period}
+                </p>
+              </div>
+            </div>
+
+            {/* Explicação de como funciona no Asaas */}
+            <div className="space-y-2 text-xs text-brand-text-muted">
+              <p className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-brand-teal shrink-0 mt-0.5" />
+                <span>
+                  Sua assinatura anterior será cancelada no gateway Asaas e substituída imediatamente pelo <strong>{targetPlanToChange.name}</strong>.
+                </span>
+              </p>
+              <p className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-brand-teal shrink-0 mt-0.5" />
+                <span>
+                  Uma nova fatura no valor de <strong>R$ {targetPlanToChange.price.toFixed(2).replace('.', ',')}</strong> ({targetPlanToChange.period.replace('/', '')}) com QR Code Pix instantâneo será gerada na hora.
+                </span>
+              </p>
+            </div>
+
+            {/* Botões de Ação */}
+            <div className="flex justify-end gap-3 pt-3 border-t border-brand-border-strong">
+              <button
+                type="button"
+                onClick={() => setShowChangePlanModal(false)}
+                disabled={isChangingPlan}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-brand-text-muted hover:text-brand-text"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmChangePlan}
+                disabled={isChangingPlan}
+                className="px-6 py-2.5 rounded-xl bg-brand-teal hover:bg-brand-teal/90 text-brand-bg font-bold text-xs flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isChangingPlan ? 'animate-spin' : ''}`} />
+                <span>{isChangingPlan ? 'Atualizando Assinatura...' : 'Confirmar Alteração de Plano'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal para Informar CPF/Nome se faltar */}
       {showCpfModal && (

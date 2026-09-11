@@ -6,6 +6,7 @@ import {
   getAsaasBaseUrl, 
   getAsaasApiKey,
   getAsaasConfig,
+  resolvePlanDetails
 } from '@/lib/asaas';
 import { sendPixOnboardingWhatsApp } from '@/lib/whatsappNotification';
 
@@ -47,10 +48,10 @@ export async function POST(req: NextRequest) {
     }
 
     const initialPassword = rawCpf; // A senha inicial é o próprio CPF
-    const isAnnualPlan = planId === 'anual-promocional' || planId === 'anual' || requestedBillingCycle === 'YEARLY';
-    const numericPrice = Number(planPrice) || (isAnnualPlan ? 59.90 : (planId === 'especialista' ? 29.90 : 9.90));
-    const selectedPlanName = planName || (isAnnualPlan ? 'Anual Essencial' : (planId === 'especialista' ? 'Especialista' : 'Essencial'));
-    const subscriptionCycle = (requestedBillingCycle || (isAnnualPlan ? 'YEARLY' : 'MONTHLY')) as 'MONTHLY' | 'YEARLY' | 'WEEKLY' | 'BIWEEKLY' | 'QUARTERLY' | 'SEMIANNUALLY';
+    const resolvedPlan = resolvePlanDetails(planId, planPrice, planName, requestedBillingCycle);
+    const numericPrice = resolvedPlan.price;
+    const selectedPlanName = resolvedPlan.name;
+    const subscriptionCycle = resolvedPlan.cycle;
 
     // -------------------------------------------------------------
     // 1. Criar ou Recuperar Cliente no Asaas
@@ -271,8 +272,10 @@ export async function POST(req: NextRequest) {
           subscription_status: 'PENDING',
           asaas_customer_id: asaasCustomerId || null,
           asaas_subscription_id: subscriptionId || null,
-          plan_selected: planId || 'essencial',
+          plan_selected: resolvedPlan.id,
+          plan_id: resolvedPlan.id,
           plan_name: selectedPlanName,
+          plan_price: numericPrice,
           updated_at: nowIso,
         };
 
@@ -299,7 +302,8 @@ export async function POST(req: NextRequest) {
             subscription_status: 'PENDING',
             asaas_customer_id: asaasCustomerId || null,
             asaas_subscription_id: subscriptionId || null,
-            plan_selected: planId || 'essencial',
+            plan_selected: resolvedPlan.id,
+            plan_name: selectedPlanName,
             updated_at: nowIso,
           };
           if (defaultTenantId) safePayload.tenant_id = defaultTenantId;

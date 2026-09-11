@@ -960,6 +960,71 @@ export async function verifyAndUnlockSubscription(params: {
   }
 }
 
+export interface ResolvedPlanInfo {
+  id: string;
+  name: string;
+  price: number;
+  cycle: 'MONTHLY' | 'YEARLY';
+  periodLabel: string;
+  badge?: string;
+  description: string;
+}
+
+/**
+ * Resolve os detalhes completos do plano pelo ID ou propriedades passadas
+ */
+export function resolvePlanDetails(
+  planId?: string, 
+  customPrice?: number, 
+  customName?: string, 
+  customCycle?: string
+): ResolvedPlanInfo {
+  const cleanId = (planId || '').trim().toLowerCase();
+  
+  // 1. Plano Anual
+  if (
+    cleanId === 'anual-promocional' || 
+    cleanId === 'anual' || 
+    cleanId === 'anual-essencial' || 
+    cleanId.includes('anual') || 
+    customCycle === 'YEARLY'
+  ) {
+    return {
+      id: 'anual-promocional',
+      name: customName || 'Anual Essencial',
+      price: customPrice !== undefined && !isNaN(customPrice) && customPrice > 0 ? Number(customPrice) : 59.90,
+      cycle: 'YEARLY',
+      periodLabel: '/ano',
+      badge: 'Mais Vendido — Economize 50%',
+      description: 'Acesso completo o ano inteiro por R$ 59,90/ano (apenas R$ 4,99/mês)',
+    };
+  }
+
+  // 2. Plano Especialista
+  if (cleanId === 'especialista' || cleanId.includes('especialista')) {
+    return {
+      id: 'especialista',
+      name: customName || 'Especialista',
+      price: customPrice !== undefined && !isNaN(customPrice) && customPrice > 0 ? Number(customPrice) : 29.90,
+      cycle: 'MONTHLY',
+      periodLabel: '/mês',
+      badge: 'Orientação com Especialista',
+      description: 'Atendimento com médico-veterinário especialista dedicado + IA',
+    };
+  }
+
+  // 3. Plano Essencial (Padrão)
+  return {
+    id: 'essencial',
+    name: customName || 'Essencial',
+    price: customPrice !== undefined && !isNaN(customPrice) && customPrice > 0 ? Number(customPrice) : 9.90,
+    cycle: 'MONTHLY',
+    periodLabel: '/mês',
+    badge: 'Orientação Contínua',
+    description: 'Orientação técnica contínua com IA 24 horas para cães e gatos',
+  };
+}
+
 /**
  * Verifica se um tutor possui assinatura ativa no sistema
  */
@@ -981,8 +1046,9 @@ export function checkTutorSubscriptionStatus(emailOrCustomerId?: string): { hasA
     ? (localStorage.getItem(userPaidKey) || localStorage.getItem('vetpro_subscription_paid')) 
     : localStorage.getItem('vetpro_subscription_paid');
 
-  const storedPlan = localStorage.getItem('vetpro_selected_plan') || 'Essencial';
-  const planDisplayName = storedPlan === 'especialista' ? 'Especialista' : 'Essencial';
+  const storedPlanId = localStorage.getItem('vetpro_selected_plan') || 'essencial';
+  const resolved = resolvePlanDetails(storedPlanId);
+  const planDisplayName = resolved.name;
 
   const isStatusActive = storedStatus === 'ACTIVE' || storedStatus === 'RECEIVED' || storedStatus === 'CONFIRMED' || storedPaid === 'true';
 
@@ -1002,9 +1068,10 @@ export function checkTutorSubscriptionStatus(emailOrCustomerId?: string): { hasA
   }
 
   const diffDays = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  const maxDays = resolved.cycle === 'YEARLY' ? 365 : 30;
   
-  // A assinatura dura exatamente 30 dias. Passou de 30 dias, expira automaticamente para pendente/inativo.
-  if (diffDays > 30) {
+  // A assinatura dura 30 dias (mensal) ou 365 dias (anual). Passou do período, expira automaticamente.
+  if (diffDays > maxDays) {
     if (userSubKey) localStorage.setItem(userSubKey, 'PENDING_PAYMENT');
     localStorage.setItem('vetpro_subscription_status', 'PENDING_PAYMENT');
     if (userPaidKey) localStorage.removeItem(userPaidKey);
