@@ -5,12 +5,12 @@ import {
   ShieldCheck, AlertTriangle, CheckCircle2, Clock, 
   Send, Plus, Trash2, Edit2, Calendar, Phone, 
   Sparkles, Loader2, AlertCircle, X, ChevronRight,
-  Info, ExternalLink, RefreshCw, FileText
+  Info, ExternalLink, RefreshCw, FileText, Syringe, Check
 } from 'lucide-react';
 import { 
   PetRecord, PetVaccineRecord, VACCINE_PRESETS,
   getPetVaccines, savePetVaccine, deletePetVaccine, 
-  sendVaccineReminderViaWhatsApp 
+  sendVaccineReminderViaWhatsApp, markVaccineBoosterApplied 
 } from '@/lib/petService';
 import { getEvolutionConfig, cleanErrorMessage } from '@/lib/evolution';
 
@@ -50,6 +50,17 @@ export function VaccinationCardModal({
   const [customMsg, setCustomMsg] = useState('');
   const [targetPhone, setTargetPhone] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Reforço Manual State (Tutor marcar como aplicada)
+  const [boosterModalVac, setBoosterModalVac] = useState<PetVaccineRecord | null>(null);
+  const [boosterAppDate, setBoosterAppDate] = useState(new Date().toISOString().split('T')[0]);
+  const [boosterNextDueDate, setBoosterNextDueDate] = useState('');
+  const [boosterBatch, setBoosterBatch] = useState('');
+  const [boosterManufacturer, setBoosterManufacturer] = useState('');
+  const [boosterVetName, setBoosterVetName] = useState('Dra. Veterinária Responsável');
+  const [boosterVetCrmv, setBoosterVetCrmv] = useState('CRMV-SP 45.890');
+  const [boosterNotes, setBoosterNotes] = useState('');
+  const [isBoosterSaving, setIsBoosterSaving] = useState(false);
 
   const loadVaccines = async (petId: string) => {
     try {
@@ -187,6 +198,65 @@ export function VaccinationCardModal({
       : `🐾 *Lembrete de Vacinação - VetPro Orienta*\n\nOlá, *${pet.tutor_name || 'Tutor'}*! Tudo bem?\n\nPassando para avisar que a próxima dose/reforço da vacina *${vac.vaccine_name}* do seu pet *${pet.name}* está prevista para *${dueDateFormatted}*.\n\n📍 Laboratório: ${vac.manufacturer || 'Vacina Ética'}\n\nGaranta a proteção do seu pet! Agende seu horário com antecedência na clínica.`;
 
     setCustomMsg(defaultMsg);
+  };
+
+  const handleOpenBoosterModal = (vac: PetVaccineRecord) => {
+    setBoosterModalVac(vac);
+    const todayStr = new Date().toISOString().split('T')[0];
+    setBoosterAppDate(todayStr);
+
+    // Calcular +1 ano padrão
+    const nextDate = new Date();
+    nextDate.setFullYear(nextDate.getFullYear() + 1);
+    setBoosterNextDueDate(nextDate.toISOString().split('T')[0]);
+
+    setBoosterBatch(vac.batch_number || '');
+    setBoosterManufacturer(vac.manufacturer || '');
+    setBoosterVetName(vac.vet_name || 'Dra. Veterinária Responsável');
+    setBoosterVetCrmv(vac.vet_crmv || 'CRMV-SP 45.890');
+    setBoosterNotes(vac.notes ? `${vac.notes} (Reforço anual aplicado)` : 'Reforço anual aplicado com sucesso');
+  };
+
+  const handleApplyBoosterPreset = (intervalDays: number) => {
+    const baseDate = boosterAppDate ? new Date(boosterAppDate + 'T12:00:00') : new Date();
+    baseDate.setDate(baseDate.getDate() + intervalDays);
+    setBoosterNextDueDate(baseDate.toISOString().split('T')[0]);
+  };
+
+  const handleConfirmBoosterApplied = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!boosterModalVac || !boosterAppDate || !boosterNextDueDate) return;
+
+    setIsBoosterSaving(true);
+    try {
+      const res = await markVaccineBoosterApplied(boosterModalVac.id, {
+        petId: pet.id,
+        applicationDate: boosterAppDate,
+        nextDueDate: boosterNextDueDate,
+        batchNumber: boosterBatch.trim(),
+        manufacturer: boosterManufacturer.trim(),
+        vetName: boosterVetName.trim(),
+        vetCrmv: boosterVetCrmv.trim(),
+        notes: boosterNotes.trim(),
+      });
+
+      if (res.success) {
+        setFeedback({ 
+          type: 'success', 
+          message: `🎉 Reforço da vacina "${boosterModalVac.vaccine_name}" marcado como aplicado com sucesso! Status atualizado para Imunizado / Em Dia.` 
+        });
+        setBoosterModalVac(null);
+        await loadVaccines(pet.id);
+        if (onPetUpdated) onPetUpdated();
+      } else {
+        setFeedback({ type: 'error', message: res.error || 'Erro ao registrar reforço.' });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Erro inesperado ao salvar reforço.' });
+    } finally {
+      setIsBoosterSaving(false);
+      setTimeout(() => setFeedback(null), 5000);
+    }
   };
 
   const handleSendWhatsAppReminder = async () => {
@@ -420,41 +490,75 @@ export function VaccinationCardModal({
                             &ldquo;{vac.notes}&rdquo;
                           </p>
                         )}
+
+                        {/* Banner de Ação Rápida para Vacina Vencida */}
+                        {isOverdue && (
+                          <div className="mb-3 bg-red-500/10 border border-red-500/25 p-2.5 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 text-xs text-red-300 font-medium">
+                              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                              <span>Reforço pendente</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenBoosterModal(vac)}
+                              className="bg-emerald-500 hover:bg-emerald-600 text-brand-bg text-xs font-bold px-3 py-1.5 rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-[1.02] cursor-pointer"
+                              title="Marcar reforço como aplicado e atualizar status da caderneta"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Marcar como Aplicada
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Ações e Lembrete WhatsApp */}
-                      <div className="pt-2.5 border-t border-brand-border-strong flex items-center justify-between gap-2">
+                      <div className="pt-2.5 border-t border-brand-border-strong flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleOpenAddForm(vac)}
-                            className="p-1.5 rounded-lg hover:bg-brand-surface-2 text-brand-text-muted hover:text-brand-text transition-colors"
+                            className="p-1.5 rounded-lg hover:bg-brand-surface-2 text-brand-text-muted hover:text-brand-text transition-colors cursor-pointer"
                             title="Editar dados da vacina"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleDeleteVac(vac.id, vac.vaccine_name)}
-                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-brand-text-muted hover:text-red-400 transition-colors"
+                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-brand-text-muted hover:text-red-400 transition-colors cursor-pointer"
                             title="Excluir vacina"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Botão de Registrar/Renovar Reforço */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenBoosterModal(vac)}
+                            className={`text-xs font-bold px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${
+                              isOverdue 
+                                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300'
+                                : 'bg-brand-surface-2 hover:bg-brand-surface border border-brand-border-strong text-brand-text-muted hover:text-emerald-400'
+                            }`}
+                            title="Registrar aplicação de reforço"
+                          >
+                            <Syringe className="w-3.5 h-3.5 text-emerald-400" />
+                            {isOverdue ? 'Registrar Reforço' : 'Renovar Reforço'}
+                          </button>
+
                           {vac.reminder_sent && (
                             <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md flex items-center gap-1" title={vac.reminder_sent_at ? `Enviado em ${new Date(vac.reminder_sent_at).toLocaleString('pt-BR')}` : 'Enviado'}>
-                              <CheckCircle2 className="w-3 h-3" /> Lembrete Enviado
+                              <CheckCircle2 className="w-3 h-3" /> Lembrete
                             </span>
                           )}
 
                           <button
                             onClick={() => handleOpenReminderModal(vac)}
-                            className="bg-brand-teal text-brand-bg text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 hover:bg-brand-teal/90 shadow-sm transition-all"
+                            className="bg-brand-teal text-brand-bg text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 hover:bg-brand-teal/90 shadow-sm transition-all cursor-pointer"
                             title="Enviar lembrete via WhatsApp da clínica"
                           >
                             <Send className="w-3 h-3" />
-                            {vac.reminder_sent ? 'Reenviar Lembrete' : 'Lembrar WhatsApp'}
+                            {vac.reminder_sent ? 'Reenviar' : 'Lembrar WhatsApp'}
                           </button>
                         </div>
                       </div>
@@ -692,6 +796,228 @@ export function VaccinationCardModal({
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Secundário: Registrar Aplicação de Reforço Manualmente */}
+        {boosterModalVac && (
+          <div className="fixed inset-0 z-60 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-brand-surface border border-emerald-500/40 rounded-3xl w-full max-w-lg p-5 sm:p-6 shadow-2xl animate-in zoom-in-95 my-auto">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                    <Syringe className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-bold text-base text-brand-text">
+                      Marcar Reforço como Aplicado
+                    </h3>
+                    <p className="text-xs text-brand-text-muted">
+                      {boosterModalVac.vaccine_name} • Pet: <strong className="text-brand-text">{pet.name}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => setBoosterModalVac(null)}
+                  className="text-brand-text-muted hover:text-brand-text p-1.5 rounded-lg hover:bg-brand-surface-2 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Banner Explicativo */}
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3 mb-4 text-xs text-emerald-300 flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-emerald-200">Atualização do Status no Sistema</p>
+                  <p className="text-[11px] text-emerald-300/85 mt-0.5 leading-relaxed">
+                    Ao registrar a aplicação, o status da vacina mudará automaticamente para <strong className="text-emerald-300">Imunizado / Em Dia</strong>, e a próxima data de reforço será agendada.
+                  </p>
+                </div>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleConfirmBoosterApplied} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-brand-text mb-1">
+                      Data da Aplicação do Reforço *
+                    </label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-text-muted pointer-events-none" />
+                      <input
+                        type="date"
+                        required
+                        value={boosterAppDate}
+                        onChange={(e) => {
+                          setBoosterAppDate(e.target.value);
+                          if (e.target.value) {
+                            const next = new Date(e.target.value + 'T12:00:00');
+                            next.setFullYear(next.getFullYear() + 1);
+                            setBoosterNextDueDate(next.toISOString().split('T')[0]);
+                          }
+                        }}
+                        className="w-full bg-brand-bg border border-brand-border-strong rounded-xl pl-9 pr-3 py-2 text-xs text-brand-text focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-brand-text mb-1">
+                      Próximo Reforço Previsto *
+                    </label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400 pointer-events-none" />
+                      <input
+                        type="date"
+                        required
+                        value={boosterNextDueDate}
+                        onChange={(e) => setBoosterNextDueDate(e.target.value)}
+                        className="w-full bg-brand-bg border border-brand-border-strong rounded-xl pl-9 pr-3 py-2 text-xs text-brand-text focus:outline-none focus:border-emerald-500 font-semibold"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Atalhos de Intervalo */}
+                <div>
+                  <span className="block text-[11px] font-semibold text-brand-text-muted mb-1.5">
+                    Calcular próximo reforço em:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyBoosterPreset(365)}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-brand-surface-2 hover:bg-emerald-500/20 text-brand-text hover:text-emerald-300 border border-brand-border-strong transition-colors cursor-pointer"
+                    >
+                      +1 Ano (Anual Padrão)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyBoosterPreset(180)}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-brand-surface-2 hover:bg-emerald-500/20 text-brand-text hover:text-emerald-300 border border-brand-border-strong transition-colors cursor-pointer"
+                    >
+                      +6 Meses
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyBoosterPreset(1095)}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-brand-surface-2 hover:bg-emerald-500/20 text-brand-text hover:text-emerald-300 border border-brand-border-strong transition-colors cursor-pointer"
+                    >
+                      +3 Anos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyBoosterPreset(28)}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-brand-surface-2 hover:bg-emerald-500/20 text-brand-text hover:text-emerald-300 border border-brand-border-strong transition-colors cursor-pointer"
+                    >
+                      +28 Dias (Filhote)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dados Opcionais */}
+                <div className="border-t border-brand-border-strong/60 pt-3 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">
+                        Fabricante / Laboratório (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={boosterManufacturer}
+                        onChange={(e) => setBoosterManufacturer(e.target.value)}
+                        placeholder="Ex: Zoetis, MSD, Virbac"
+                        className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3 py-1.5 text-xs text-brand-text focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">
+                        Lote da Vacina (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={boosterBatch}
+                        onChange={(e) => setBoosterBatch(e.target.value)}
+                        placeholder="Ex: LOTE-98321"
+                        className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3 py-1.5 text-xs text-brand-text focus:outline-none focus:border-emerald-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">
+                        Veterinário Responsável
+                      </label>
+                      <input
+                        type="text"
+                        value={boosterVetName}
+                        onChange={(e) => setBoosterVetName(e.target.value)}
+                        placeholder="Nome do veterinário"
+                        className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3 py-1.5 text-xs text-brand-text focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">
+                        CRMV
+                      </label>
+                      <input
+                        type="text"
+                        value={boosterVetCrmv}
+                        onChange={(e) => setBoosterVetCrmv(e.target.value)}
+                        placeholder="Ex: CRMV-SP 45.890"
+                        className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3 py-1.5 text-xs text-brand-text focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-brand-text-muted mb-1">
+                      Observações da Aplicação
+                    </label>
+                    <input
+                      type="text"
+                      value={boosterNotes}
+                      onChange={(e) => setBoosterNotes(e.target.value)}
+                      placeholder="Ex: Dose anual de reforço aplicada sem reações adversas"
+                      className="w-full bg-brand-bg border border-brand-border-strong rounded-xl px-3 py-1.5 text-xs text-brand-text focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Rodapé / Botões */}
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-brand-border-strong">
+                  <button
+                    type="button"
+                    onClick={() => setBoosterModalVac(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-medium text-brand-text-muted hover:text-brand-text hover:bg-brand-surface-2 transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isBoosterSaving || !boosterAppDate || !boosterNextDueDate}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-brand-bg font-bold px-5 py-2.5 rounded-xl text-xs disabled:opacity-50 flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                  >
+                    {isBoosterSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Atualizando Status...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        Confirmar Reforço Aplicado
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

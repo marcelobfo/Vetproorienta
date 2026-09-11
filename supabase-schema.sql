@@ -638,5 +638,86 @@ VALUES
   ('VetPro Enterprise', 'enterprise', 'Para redes hospitalares e franqueadoras veterinárias', 799.00, 7590.00, 'MONTHLY', '', 99999, 999, 'Ilimitado', false, true, false)
 ON CONFLICT DO NOTHING;
 
+-- ------------------------------------------------------------------------------
+-- MÓDULO RADAR DE PETS PERDIDOS & ALERTA COMUNITÁRIO
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.lost_pets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    pet_name TEXT NOT NULL,
+    species TEXT NOT NULL DEFAULT 'Cão',
+    breed TEXT,
+    color TEXT,
+    gender TEXT DEFAULT 'Macho',
+    size TEXT DEFAULT 'Médio',
+    has_collar BOOLEAN DEFAULT false,
+    collar_description TEXT,
+    microchip TEXT,
+    reward_amount NUMERIC(10,2) DEFAULT 0.00,
+    photo_url TEXT,
+    distinguishing_marks TEXT,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'lost',
+    last_seen_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    last_seen_time TEXT,
+    last_seen_street TEXT,
+    last_seen_neighborhood TEXT NOT NULL,
+    last_seen_city TEXT NOT NULL,
+    last_seen_state VARCHAR(2) NOT NULL DEFAULT 'MG',
+    last_seen_postal_code TEXT,
+    last_seen_reference_point TEXT,
+    last_seen_latitude DOUBLE PRECISION,
+    last_seen_longitude DOUBLE PRECISION,
+    alert_radius_km INTEGER NOT NULL DEFAULT 15,
+    contact_name TEXT NOT NULL,
+    contact_phone TEXT NOT NULL,
+    contact_whatsapp TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.lost_pet_sightings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    lost_pet_id UUID NOT NULL REFERENCES public.lost_pets(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    reporter_name TEXT NOT NULL,
+    reporter_phone TEXT NOT NULL,
+    sighted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    street TEXT,
+    neighborhood TEXT,
+    city TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    description TEXT NOT NULL,
+    photo_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lost_pets_status ON public.lost_pets(status);
+CREATE INDEX IF NOT EXISTS idx_lost_pets_city_neighborhood ON public.lost_pets(last_seen_city, last_seen_neighborhood);
+CREATE INDEX IF NOT EXISTS idx_lost_pet_sightings_pet_id ON public.lost_pet_sightings(lost_pet_id);
+
+ALTER TABLE public.lost_pets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lost_pet_sightings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Todos podem visualizar pets perdidos" ON public.lost_pets;
+CREATE POLICY "Todos podem visualizar pets perdidos" ON public.lost_pets FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Usuários podem cadastrar pets perdidos" ON public.lost_pets;
+CREATE POLICY "Usuários podem cadastrar pets perdidos" ON public.lost_pets FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Donos e Admins podem atualizar pets perdidos" ON public.lost_pets;
+CREATE POLICY "Donos e Admins podem atualizar pets perdidos" ON public.lost_pets FOR UPDATE USING (
+    auth.uid() = user_id OR 
+    EXISTS (SELECT 1 FROM public.user_profiles WHERE id = auth.uid() AND role IN ('admin', 'super_admin', 'veterinarian'))
+);
+
+DROP POLICY IF EXISTS "Todos podem ver avistamentos" ON public.lost_pet_sightings;
+CREATE POLICY "Todos podem ver avistamentos" ON public.lost_pet_sightings FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Qualquer tutor pode enviar avistamento" ON public.lost_pet_sightings;
+CREATE POLICY "Qualquer tutor pode enviar avistamento" ON public.lost_pet_sightings FOR INSERT WITH CHECK (true);
+
 -- Notificar PostgREST para recarregar o schema do banco instantaneamente
 NOTIFY pgrst, 'reload schema';

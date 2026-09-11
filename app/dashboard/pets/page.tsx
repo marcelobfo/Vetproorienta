@@ -6,12 +6,13 @@ import {
   Dog, Cat, Plus, Trash2, Edit2, Calendar, 
   User, Weight, ShieldCheck, Heart, Sparkles, 
   MessageSquare, Loader2, Search, X, CheckCircle2, 
-  AlertCircle, Phone, Syringe, Send, Check
+  AlertCircle, Phone, Syringe, Send, Check, AlertTriangle
 } from 'lucide-react';
 import Link from 'next/link';
 import { 
   getSavedPets, savePetRecord, deletePetRecord, PetRecord, 
-  getPetVaccines, PetVaccineRecord, getOrphanPetsFromHistory, restorePetFromHistory 
+  getPetVaccines, PetVaccineRecord, getOrphanPetsFromHistory, restorePetFromHistory,
+  getAllPetsVaccineSummary
 } from '@/lib/petService';
 import { VaccinationCardModal } from '@/components/VaccinationCardModal';
 import { SecurityDeleteModal } from '@/components/SecurityDeleteModal';
@@ -22,6 +23,7 @@ export default function PetsPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSpecies, setSelectedSpecies] = useState<'all' | 'Cão' | 'Gato'>('all');
+  const [vacSummary, setVacSummary] = useState<Record<string, { total: number; overdue: number; applied: number; scheduled: number; overdueVaccines: PetVaccineRecord[] }>>({});
   
   // Orphan Pets Recovery (Pets in chat history not yet in pets table)
   const [orphanPets, setOrphanPets] = useState<Array<{
@@ -71,10 +73,14 @@ export default function PetsPage() {
 
   const loadPets = async () => {
     try {
-      const data = await getSavedPets();
+      const [data, orphans, vacs] = await Promise.all([
+        getSavedPets(),
+        getOrphanPetsFromHistory(),
+        getAllPetsVaccineSummary()
+      ]);
       setPets(data);
-      const orphans = await getOrphanPetsFromHistory();
       setOrphanPets(orphans);
+      setVacSummary(vacs);
     } catch (e) {
       console.error('Erro ao carregar pets:', e);
     } finally {
@@ -84,10 +90,15 @@ export default function PetsPage() {
 
   useEffect(() => {
     let isMounted = true;
-    Promise.all([getSavedPets(), getOrphanPetsFromHistory()]).then(([data, orphans]) => {
+    Promise.all([
+      getSavedPets(), 
+      getOrphanPetsFromHistory(),
+      getAllPetsVaccineSummary()
+    ]).then(([data, orphans, vacs]) => {
       if (isMounted) {
         setPets(data);
         setOrphanPets(orphans);
+        setVacSummary(vacs);
         setLoading(false);
       }
     }).catch(() => {
@@ -99,6 +110,7 @@ export default function PetsPage() {
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('vetpro_pet_updated', handlePetUpdated);
+      window.addEventListener('vetpro_vaccine_updated', handlePetUpdated);
       window.addEventListener('focus', handlePetUpdated);
     }
 
@@ -106,6 +118,7 @@ export default function PetsPage() {
       isMounted = false;
       if (typeof window !== 'undefined') {
         window.removeEventListener('vetpro_pet_updated', handlePetUpdated);
+        window.removeEventListener('vetpro_vaccine_updated', handlePetUpdated);
         window.removeEventListener('focus', handlePetUpdated);
       }
     };
@@ -497,22 +510,49 @@ export default function PetsPage() {
 
                   {/* DESTAQUE: Botão da Caderneta de Vacinação Digital */}
                   <div className="mb-3">
-                    <button
-                      onClick={() => setVaccineModalPet(pet)}
-                      className="w-full bg-brand-teal/10 hover:bg-brand-teal/20 border border-brand-teal/30 hover:border-brand-teal text-brand-text text-xs font-bold py-2.5 px-3.5 rounded-xl flex items-center justify-between transition-all group/vac"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-brand-teal/20 text-brand-teal flex items-center justify-center">
-                          <ShieldCheck className="w-3.5 h-3.5" />
+                    {vacSummary[pet.id]?.overdue ? (
+                      <button
+                        type="button"
+                        onClick={() => setVaccineModalPet(pet)}
+                        className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-brand-text text-xs font-bold py-2.5 px-3.5 rounded-xl flex items-center justify-between transition-all group/vac shadow-sm cursor-pointer"
+                        title="Abrir caderneta para marcar reforço como aplicado"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="text-left">
+                            <span className="text-red-400 font-bold block leading-tight">
+                              {vacSummary[pet.id].overdue === 1 ? '1 Reforço Vencido' : `${vacSummary[pet.id].overdue} Reforços Vencidos`}
+                            </span>
+                            <span className="text-[10px] text-brand-text-muted">
+                              Clique para marcar como aplicada
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-brand-text group-hover/vac:text-brand-teal transition-colors">
-                          Caderneta de Vacinação Digital
+                        <span className="text-[10px] bg-emerald-500 hover:bg-emerald-600 text-brand-bg px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 shadow-sm shrink-0">
+                          <CheckCircle2 className="w-3 h-3" /> Marcar
                         </span>
-                      </div>
-                      <span className="text-[10px] bg-brand-teal text-brand-bg px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
-                        <Syringe className="w-3 h-3" /> Ver / Vacinar
-                      </span>
-                    </button>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setVaccineModalPet(pet)}
+                        className="w-full bg-brand-teal/10 hover:bg-brand-teal/20 border border-brand-teal/30 hover:border-brand-teal text-brand-text text-xs font-bold py-2.5 px-3.5 rounded-xl flex items-center justify-between transition-all group/vac cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-brand-teal/20 text-brand-teal flex items-center justify-center">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-brand-text group-hover/vac:text-brand-teal transition-colors">
+                            Caderneta de Vacinação Digital
+                          </span>
+                        </div>
+                        <span className="text-[10px] bg-brand-teal text-brand-bg px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                          <Syringe className="w-3 h-3" /> Ver / Vacinar
+                        </span>
+                      </button>
+                    )}
                   </div>
 
                   {pet.symptoms && (

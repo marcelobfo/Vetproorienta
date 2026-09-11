@@ -183,6 +183,29 @@ export async function fetchGooglePlacesPartners(params: {
   return [];
 }
 
+const CITY_COORDS_MAP: Record<string, { latitude: number; longitude: number }> = {
+  'montes claros': { latitude: -16.7282, longitude: -43.8578 },
+  'belo horizonte': { latitude: -19.9167, longitude: -43.9345 },
+  'uberlandia': { latitude: -18.9186, longitude: -48.2772 },
+  'uberlândia': { latitude: -18.9186, longitude: -48.2772 },
+  'juiz de fora': { latitude: -21.7587, longitude: -43.3496 },
+  'sao paulo': { latitude: -23.5505, longitude: -46.6333 },
+  'são paulo': { latitude: -23.5505, longitude: -46.6333 },
+  'campinas': { latitude: -22.9056, longitude: -47.0608 },
+  'rio de janeiro': { latitude: -22.9068, longitude: -43.1729 },
+  'niteroi': { latitude: -22.8833, longitude: -43.1039 },
+  'niterói': { latitude: -22.8833, longitude: -43.1039 },
+  'brasilia': { latitude: -15.7975, longitude: -47.8919 },
+  'brasília': { latitude: -15.7975, longitude: -47.8919 },
+  'curitiba': { latitude: -25.4284, longitude: -49.2733 },
+  'salvador': { latitude: -12.9777, longitude: -38.5016 },
+  'porto alegre': { latitude: -30.0346, longitude: -51.2177 },
+  'recife': { latitude: -8.0476, longitude: -34.8770 },
+  'fortaleza': { latitude: -3.7319, longitude: -38.5267 },
+  'goiania': { latitude: -16.6869, longitude: -49.2648 },
+  'goiânia': { latitude: -16.6869, longitude: -49.2648 },
+};
+
 // Listar apenas parceiros ativos para exibição pública / tutor
 export async function getActivePartners(
   userCoords?: { latitude: number; longitude: number } | null,
@@ -191,12 +214,23 @@ export async function getActivePartners(
   const all = await getPartners();
   let active = all.filter(p => p.status === 'active');
 
+  // Coordenadas de referência efetivas (GPS físico ou centro da cidade selecionada)
+  let effectiveCoords = userCoords;
+  if (!effectiveCoords || !effectiveCoords.latitude || !effectiveCoords.longitude) {
+    const cityNameLower = (options?.city || 'Montes Claros').toLowerCase().trim();
+    if (CITY_COORDS_MAP[cityNameLower]) {
+      effectiveCoords = CITY_COORDS_MAP[cityNameLower];
+    } else {
+      effectiveCoords = { latitude: -16.7282, longitude: -43.8578 };
+    }
+  }
+
   // Se solicitado busca integrada via API de mapas/estabelecimentos
   let googlePlaces: Partner[] = [];
   if (options?.includeGooglePlaces) {
     googlePlaces = await fetchGooglePlacesPartners({
-      latitude: userCoords?.latitude,
-      longitude: userCoords?.longitude,
+      latitude: effectiveCoords?.latitude,
+      longitude: effectiveCoords?.longitude,
       address: options.address,
       city: options.city,
       state: options.state,
@@ -210,12 +244,15 @@ export async function getActivePartners(
   const uniquePlaces = googlePlaces.filter(p => !existingIds.has(p.id));
   let mergedList = [...active, ...uniquePlaces];
 
-  if (userCoords && userCoords.latitude && userCoords.longitude) {
+  if (effectiveCoords && effectiveCoords.latitude && effectiveCoords.longitude) {
     mergedList = mergedList.map(partner => {
+      if (partner.distanceKm !== undefined && typeof partner.distanceKm === 'number') {
+        return partner;
+      }
       if (partner.latitude && partner.longitude) {
         const dist = calculateDistanceKm(
-          userCoords.latitude,
-          userCoords.longitude,
+          effectiveCoords!.latitude,
+          effectiveCoords!.longitude,
           partner.latitude,
           partner.longitude
         );

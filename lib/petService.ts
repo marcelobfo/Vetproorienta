@@ -791,6 +791,147 @@ export async function deletePetVaccine(id: string): Promise<boolean> {
 }
 
 /**
+ * Marca o reforço de uma vacina como aplicado manualmente pelo tutor
+ * Atualiza a data de aplicação, define o próximo reforço (ex: +1 ano) e reseta o status para 'applied' (em dia/imunizado)
+ */
+export async function markVaccineBoosterApplied(
+  vaccineId: string,
+  params: {
+    petId?: string;
+    applicationDate?: string;
+    nextDueDate?: string;
+    nextIntervalDays?: number;
+    batchNumber?: string;
+    manufacturer?: string;
+    vetName?: string;
+    vetCrmv?: string;
+    notes?: string;
+  } = {}
+): Promise<{ success: boolean; data?: PetVaccineRecord; error?: string }> {
+  try {
+    let existingVac: PetVaccineRecord | null = null;
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseClient();
+        const { data } = await supabase.from('pet_vaccines').select('*').eq('id', vaccineId).maybeSingle();
+        if (data) {
+          existingVac = data;
+        }
+      } catch (e) {
+        console.warn('Erro ao consultar vacina no Supabase:', e);
+      }
+    }
+
+    if (!existingVac && typeof window !== 'undefined') {
+      const raw = localStorage.getItem(VACCINES_STORAGE_KEY);
+      if (raw) {
+        const all: PetVaccineRecord[] = JSON.parse(raw);
+        existingVac = all.find(v => v.id === vaccineId) || null;
+      }
+    }
+
+    if (!existingVac) {
+      return { success: false, error: 'Registro de vacina não localizado no sistema.' };
+    }
+
+    const appDate = params.applicationDate || new Date().toISOString().split('T')[0];
+
+    // Se a próxima data de reforço não foi passada, calcula 1 ano (365 dias) a partir da data de aplicação
+    let nextDue = params.nextDueDate;
+    if (!nextDue) {
+      const appDateTime = new Date(appDate + 'T12:00:00');
+      const intervalDays = params.nextIntervalDays || 365;
+      appDateTime.setDate(appDateTime.getDate() + intervalDays);
+      nextDue = appDateTime.toISOString().split('T')[0];
+    }
+
+    const updatedVac: PetVaccineRecord = {
+      ...existingVac,
+      application_date: appDate,
+      next_due_date: nextDue,
+      status: 'applied',
+      batch_number: params.batchNumber !== undefined ? params.batchNumber : (existingVac.batch_number || ''),
+      manufacturer: params.manufacturer !== undefined ? params.manufacturer : (existingVac.manufacturer || ''),
+      vet_name: params.vetName !== undefined ? params.vetName : (existingVac.vet_name || ''),
+      vet_crmv: params.vetCrmv !== undefined ? params.vetCrmv : (existingVac.vet_crmv || ''),
+      notes: params.notes !== undefined ? params.notes : (existingVac.notes || ''),
+      reminder_sent: false,
+      reminder_sent_at: undefined,
+      updated_at: new Date().toISOString()
+    };
+
+    const res = await savePetVaccine(updatedVac);
+
+    if (res.success && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('vetpro_vaccine_updated', { detail: res.data }));
+      window.dispatchEvent(new CustomEvent('vetpro_pet_updated'));
+    }
+
+    return res;
+  } catch (err: any) {
+    console.error('Erro ao marcar reforço de vacina como aplicado:', err);
+    return { success: false, error: err.message || 'Erro ao atualizar status da vacina.' };
+  }
+}
+
+/**
+ * Obtém resumo de vacinas de todos os pets do tutor para indicadores de status
+ */
+export async function getAllPetsVaccineSummary(): Promise<Record<string, { total: number; overdue: number; applied: number; scheduled: number; overdueVaccines: PetVaccineRecord[] }>> {
+  const summary: Record<string, { total: number; overdue: number; applied: number; scheduled: number; overdueVaccines: PetVaccineRecord[] }> = {};
+
+  let allVaccines: PetVaccineRecord[] = [];
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.from('pet_vaccines').select('*');
+      if (data && data.length > 0) {
+        allVaccines = data.map((d: any) => ({
+          ...d,
+          status: calculateVaccineStatus(d.next_due_date, d.status)
+        }));
+      }
+    } catch (e) {
+      console.warn('Erro ao consultar resumo de vacinas no Supabase:', e);
+    }
+  }
+
+  if (allVaccines.length === 0 && typeof window !== 'undefined') {
+    const raw = localStorage.getItem(VACCINES_STORAGE_KEY);
+    if (raw) {
+      try {
+        const parsed: PetVaccineRecord[] = JSON.parse(raw);
+        allVaccines = parsed.map(v => ({
+          ...v,
+          status: calculateVaccineStatus(v.next_due_date, v.status)
+        }));
+      } catch {
+        allVaccines = [];
+      }
+    }
+  }
+
+  allVaccines.forEach(vac => {
+    if (!summary[vac.pet_id]) {
+      summary[vac.pet_id] = { total: 0, overdue: 0, applied: 0, scheduled: 0, overdueVaccines: [] };
+    }
+    summary[vac.pet_id].total++;
+    if (vac.status === 'overdue') {
+      summary[vac.pet_id].overdue++;
+      summary[vac.pet_id].overdueVaccines.push(vac);
+    } else if (vac.status === 'scheduled') {
+      summary[vac.pet_id].scheduled++;
+    } else {
+      summary[vac.pet_id].applied++;
+    }
+  });
+
+  return summary;
+}
+
+/**
  * Dispara o Lembrete de Vacinação pelo WhatsApp (Evolution API)
  */
 export async function sendVaccineReminderViaWhatsApp(params: {
@@ -872,6 +1013,14 @@ export async function getChatSessions(filterUserId?: string): Promise<ChatSessio
   let currentSessionUserId = '';
   let currentUserRole = 'tutor';
 
+  // 1. Identificar usuário atual
+  if (typeof window !== 'undefined') {
+    const localUserId = localStorage.getItem('vetpro_user_id');
+    const localRole = localStorage.getItem('vetpro_user_role');
+    if (localUserId) currentSessionUserId = localUserId;
+    if (localRole) currentUserRole = localRole;
+  }
+
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
@@ -897,7 +1046,25 @@ export async function getChatSessions(filterUserId?: string): Promise<ChatSessio
     }
   }
 
-  if (isSupabaseConfigured()) {
+  // 2. Buscar da API de sessões / Supabase
+  let remoteSessions: ChatSessionRecord[] = [];
+  try {
+    const url = targetUserId && targetUserId !== 'all' 
+      ? `/api/chat/sessions?userId=${encodeURIComponent(targetUserId)}`
+      : '/api/chat/sessions';
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.sessions)) {
+        remoteSessions = data.sessions;
+      }
+    }
+  } catch (apiErr) {
+    console.warn('Erro ao consultar /api/chat/sessions:', apiErr);
+  }
+
+  // Se a API não retornou e Supabase está configurado, tenta direto no client
+  if (remoteSessions.length === 0 && isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
       let query = supabase
@@ -915,13 +1082,13 @@ export async function getChatSessions(filterUserId?: string): Promise<ChatSessio
       const { data: sessionRows, error } = await query;
 
       if (!error && sessionRows && sessionRows.length > 0) {
-        sessions = sessionRows.map((s: any) => ({
+        remoteSessions = sessionRows.map((s: any) => ({
           id: s.id,
           tenant_id: s.tenant_id,
           user_id: s.user_id,
           pet_id: s.pet_id,
-          tutor_name: s.tutor_name,
-          pet_name: s.pet_name,
+          tutor_name: s.tutor_name || 'Tutor',
+          pet_name: s.pet_name || 'Pet',
           species: s.species || 'Cão',
           breed: s.breed || 'SRD',
           sex: s.sex || 'Não informado',
@@ -942,41 +1109,73 @@ export async function getChatSessions(filterUserId?: string): Promise<ChatSessio
               created_at: m.created_at
             }))
         }));
-        return sessions;
       }
     } catch (e) {
       console.warn('Erro ao buscar chat_sessions no Supabase:', e);
     }
   }
 
-  // Fallback para LocalStorage
+  // 3. Carregar LocalStorage
+  let localSessions: ChatSessionRecord[] = [];
   if (typeof window !== 'undefined') {
     const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
     if (raw) {
       try {
         const parsed: ChatSessionRecord[] = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          if (targetUserId && targetUserId !== 'all') {
-            sessions = parsed.filter(s => s.user_id === targetUserId);
-          } else if (currentUserRole === 'tutor' && currentSessionUserId) {
-            sessions = parsed.filter(s => s.user_id === currentSessionUserId);
-          } else {
-            sessions = parsed;
-          }
+          localSessions = parsed;
         }
       } catch {
-        sessions = [];
+        localSessions = [];
       }
     }
   }
 
-  return sessions;
+  // 4. Mesclagem inteligente sem duplicação (priorizando registros mais recentes)
+  const sessionMap = new Map<string, ChatSessionRecord>();
+  
+  // Insere remotas
+  for (const s of remoteSessions) {
+    sessionMap.set(s.id, s);
+  }
+
+  // Insere locais se não existirem ou se tiverem mais mensagens
+  for (const s of localSessions) {
+    const existing = sessionMap.get(s.id);
+    if (!existing) {
+      sessionMap.set(s.id, s);
+    } else if ((s.messages?.length || 0) > (existing.messages?.length || 0)) {
+      sessionMap.set(s.id, { ...existing, ...s });
+    }
+  }
+
+  let merged = Array.from(sessionMap.values());
+
+  // Filtragem flexível para tutores
+  if (targetUserId && targetUserId !== 'all') {
+    merged = merged.filter(s => !s.user_id || s.user_id === targetUserId);
+  }
+
+  // Ordenar por updated_at decrescente
+  merged.sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
+
+  // Atualizar cache local
+  if (typeof window !== 'undefined' && merged.length > 0) {
+    try {
+      localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(merged));
+    } catch {
+      // continua
+    }
+  }
+
+  return merged;
 }
 
 /**
  * Busca uma sessão de chat específica por ID
  */
 export async function getChatSessionById(sessionId: string): Promise<ChatSessionRecord | null> {
+  if (!sessionId) return null;
   const all = await getChatSessions('all');
   return all.find(s => s.id === sessionId) || null;
 }
@@ -985,10 +1184,11 @@ export async function getChatSessionById(sessionId: string): Promise<ChatSession
  * Busca a última sessão de chat realizada para um determinado Pet
  */
 export async function getLatestChatSessionForPet(petId: string): Promise<ChatSessionRecord | null> {
+  if (!petId) return null;
   const all = await getChatSessions('all');
   const petSessions = all
     .filter(s => s.pet_id === petId)
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    .sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
   return petSessions.length > 0 ? petSessions[0] : null;
 }
 
@@ -1005,6 +1205,12 @@ export async function saveChatSession(
     
     let resolvedUserId = sessionData.user_id;
     let resolvedTenantId = sessionData.tenant_id;
+
+    if (typeof window !== 'undefined') {
+      if (!resolvedUserId) {
+        resolvedUserId = localStorage.getItem('vetpro_user_id') || undefined;
+      }
+    }
 
     if (isSupabaseConfigured()) {
       try {
@@ -1031,7 +1237,7 @@ export async function saveChatSession(
     }
 
     // Gerar resumo automático se não fornecido
-    const firstUserMsg = messages.find(m => m.role === 'user')?.content || 'Triagem geral';
+    const firstUserMsg = messages.find(m => m.role === 'user')?.content || 'Triagem e orientação veterinária';
     const autoSummary = sessionData.summary || (firstUserMsg.length > 60 ? firstUserMsg.substring(0, 57) + '...' : firstUserMsg);
 
     const fullSession: ChatSessionRecord = {
@@ -1039,7 +1245,7 @@ export async function saveChatSession(
       tenant_id: resolvedTenantId || undefined,
       user_id: resolvedUserId || undefined,
       pet_id: isValidUUID(sessionData.pet_id) ? sessionData.pet_id : undefined,
-      tutor_name: sessionData.tutor_name || 'Tutor',
+      tutor_name: sessionData.tutor_name || (typeof window !== 'undefined' ? localStorage.getItem('vetpro_tutor_name') || 'Tutor' : 'Tutor'),
       pet_name: sessionData.pet_name || 'Pet',
       species: sessionData.species || 'Cão',
       breed: sessionData.breed || 'SRD',
@@ -1060,62 +1266,7 @@ export async function saveChatSession(
       updated_at: nowIso
     };
 
-    // 1. Salvar no Supabase se disponível
-    if (isSupabaseConfigured()) {
-      try {
-        const supabase = getSupabaseClient();
-
-        if (!resolvedTenantId) {
-          const { data: tenantData } = await supabase.from('tenants').select('id').limit(1).maybeSingle();
-          if (tenantData?.id) {
-            resolvedTenantId = tenantData.id;
-            fullSession.tenant_id = tenantData.id;
-          }
-        }
-
-        const payload: any = {
-          id: fullSession.id,
-          user_id: fullSession.user_id || null,
-          tutor_name: fullSession.tutor_name,
-          pet_name: fullSession.pet_name,
-          species: fullSession.species,
-          breed: fullSession.breed,
-          sex: fullSession.sex,
-          age: fullSession.age,
-          weight: fullSession.weight,
-          triage_level: fullSession.triage_level,
-          summary: fullSession.summary,
-          updated_at: fullSession.updated_at
-        };
-
-        if (resolvedTenantId) payload.tenant_id = resolvedTenantId;
-        if (fullSession.pet_id) payload.pet_id = fullSession.pet_id;
-
-        const { error: sessionUpsertErr } = await supabase
-          .from('chat_sessions')
-          .upsert(payload, { onConflict: 'id' });
-
-        if (sessionUpsertErr) {
-          console.warn('[Supabase ChatSession] Erro ao salvar sessão:', sessionUpsertErr.message);
-        } else if (fullSession.messages.length > 0) {
-          // Salvar as mensagens mais recentes
-          const messagesPayload = fullSession.messages.map(m => ({
-            id: m.id,
-            session_id: fullSession.id,
-            sender_type: m.role === 'model' ? 'ai' : 'tutor',
-            content: m.content,
-            image_url: m.image_url,
-            created_at: nowIso
-          }));
-
-          await supabase.from('chat_messages').upsert(messagesPayload, { onConflict: 'id' });
-        }
-      } catch (e) {
-        console.warn('Erro ao salvar chat_session no Supabase:', e);
-      }
-    }
-
-    // 2. Salvar no LocalStorage
+    // 1. Salvar no LocalStorage imediatamente
     if (typeof window !== 'undefined') {
       const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
       let all: ChatSessionRecord[] = [];
@@ -1133,6 +1284,36 @@ export async function saveChatSession(
       localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(updated));
     }
 
+    // 2. Persistir via API Backend (garante gravação no Supabase com bypass RLS seguro)
+    try {
+      await fetch('/api/chat/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionData: {
+            id: fullSession.id,
+            tenant_id: fullSession.tenant_id,
+            user_id: fullSession.user_id,
+            pet_id: fullSession.pet_id,
+            tutor_name: fullSession.tutor_name,
+            pet_name: fullSession.pet_name,
+            species: fullSession.species,
+            breed: fullSession.breed,
+            sex: fullSession.sex,
+            age: fullSession.age,
+            weight: fullSession.weight,
+            triage_level: fullSession.triage_level,
+            summary: fullSession.summary,
+            created_at: fullSession.created_at,
+            updated_at: fullSession.updated_at,
+          },
+          messages: fullSession.messages
+        })
+      });
+    } catch (apiErr) {
+      console.warn('Persistência via API falhou, dados seguros em storage:', apiErr);
+    }
+
     return { success: true, data: fullSession };
   } catch (err: any) {
     console.error('Erro ao salvar chat session:', err);
@@ -1144,6 +1325,28 @@ export async function saveChatSession(
  * Remove uma sessão de chat
  */
 export async function deleteChatSession(sessionId: string): Promise<boolean> {
+  if (!sessionId) return false;
+
+  // 1. Deletar do LocalStorage
+  if (typeof window !== 'undefined') {
+    const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
+    if (raw) {
+      const all: ChatSessionRecord[] = JSON.parse(raw);
+      const filtered = all.filter(s => s.id !== sessionId);
+      localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(filtered));
+    }
+  }
+
+  // 2. Deletar via API Backend
+  try {
+    await fetch(`/api/chat/sessions?id=${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE'
+    });
+  } catch (apiErr) {
+    console.warn('Erro ao deletar sessão via API:', apiErr);
+  }
+
+  // 3. Fallback Supabase client
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
@@ -1151,15 +1354,6 @@ export async function deleteChatSession(sessionId: string): Promise<boolean> {
       await supabase.from('chat_sessions').delete().eq('id', sessionId);
     } catch (e) {
       console.warn('Erro ao excluir sessão no Supabase:', e);
-    }
-  }
-
-  if (typeof window !== 'undefined') {
-    const raw = localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
-    if (raw) {
-      const all: ChatSessionRecord[] = JSON.parse(raw);
-      const filtered = all.filter(s => s.id !== sessionId);
-      localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(filtered));
     }
   }
 

@@ -11,7 +11,7 @@ import {
   Package, LogOut, User, Dog, History, Shield, Zap,
   BrainCircuit, Users, Globe, ChevronDown, Check, Smartphone, 
   AlertTriangle, QrCode, Copy, CheckCircle2, RefreshCw, ExternalLink, Lock, FileText,
-  MapPin, UserCheck, Building, ShieldCheck, Menu, X
+  MapPin, UserCheck, Building, ShieldCheck, Menu, X, Radio
 } from 'lucide-react';
 import { triggerPWAInstallModal } from '@/components/PwaInstallPrompt';
 
@@ -419,9 +419,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return isModuleActive(SYSTEM_MODULE_KEYS.PARCEIROS_GPS);
   });
 
+  const [isLostPetsModuleEnabled, setIsLostPetsModuleEnabled] = useState<boolean>(() => {
+    return isModuleActive(SYSTEM_MODULE_KEYS.LOST_PETS_RADAR);
+  });
+
   useEffect(() => {
     const handleModulesUpdate = () => {
       setIsPartnersModuleEnabled(isModuleActive(SYSTEM_MODULE_KEYS.PARCEIROS_GPS));
+      setIsLostPetsModuleEnabled(isModuleActive(SYSTEM_MODULE_KEYS.LOST_PETS_RADAR));
     };
     window.addEventListener('vetpro_modules_changed', handleModulesUpdate);
     return () => window.removeEventListener('vetpro_modules_changed', handleModulesUpdate);
@@ -432,6 +437,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Meu Perfil (Dados)', href: '/dashboard/perfil', icon: UserCheck },
     { name: 'Triagem AI (Chat)', href: '/dashboard/chat', icon: MessageSquare },
     { name: 'Meus Pets', href: '/dashboard/pets', icon: Dog },
+    ...(isLostPetsModuleEnabled ? [{ name: 'Pets Perdidos & Radar', href: '/dashboard/pets-perdidos', icon: Radio }] : []),
     ...(isPartnersModuleEnabled ? [{ name: 'Rede de Parceiros & GPS', href: '/dashboard/parceiros', icon: MapPin }] : []),
     { name: 'Histórico', href: '/dashboard/historico', icon: History },
     { name: 'Assinatura & Faturas', href: '/dashboard/assinatura', icon: CreditCard },
@@ -441,6 +447,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const adminNavItems = [
     { name: 'Visão Geral (Clínica)', href: '/dashboard/admin', icon: Activity },
     { name: 'Central de Cadastros', href: '/dashboard/admin/cadastros', icon: UserCheck },
+    ...(isLostPetsModuleEnabled ? [{ name: 'Pets Perdidos & Radar', href: '/dashboard/pets-perdidos', icon: Radio }] : []),
     ...(isPartnersModuleEnabled ? [{ name: 'Rede de Parceiros', href: '/dashboard/parceiros', icon: MapPin }] : []),
     { name: 'WhatsApp & Evolution', href: '/dashboard/admin/whatsapp', icon: Smartphone },
     { name: 'Asaas & Pagamentos', href: '/dashboard/admin/asaas', icon: CreditCard },

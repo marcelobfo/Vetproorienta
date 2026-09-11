@@ -11,6 +11,7 @@ import QRCode from 'qrcode';
 import { supabase } from '@/lib/supabase';
 import { getSavedPets, PetRecord, getChatSessions, ChatSessionRecord } from '@/lib/petService';
 import { checkTutorSubscriptionStatus, verifyAndUnlockSubscription } from '@/lib/asaas';
+import { LostPetRadarBanner } from '@/components/LostPetRadarBanner';
 
 export default function TutorDashboard() {
   const [tutorName, setTutorName] = useState('Tutor');
@@ -351,6 +352,9 @@ export default function TutorDashboard() {
             )}
           </div>
         )}
+
+        {/* ALERTA COMUNITÁRIO: PET PERDIDO NO RAIO DO TUTOR */}
+        <LostPetRadarBanner />
 
         {/* 3 Main Action Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { 
   Zap, ShieldCheck, PhoneCall, FileSpreadsheet, 
   Stethoscope, Sparkles, CheckCircle2, AlertCircle, Save, Building, RefreshCw,
-  MapPin, ShieldAlert, Crown, LayoutGrid, ArrowRight, Eye, EyeOff
+  MapPin, ShieldAlert, Crown, LayoutGrid, ArrowRight, Eye, EyeOff, Radio, Search
 } from 'lucide-react';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { SupabaseStatusBanner } from '@/components/SupabaseStatusBanner';
@@ -22,6 +22,15 @@ interface ModuleItem {
 }
 
 const INITIAL_MODULES: ModuleItem[] = [
+  {
+    id: SYSTEM_MODULE_KEYS.LOST_PETS_RADAR,
+    name: 'Radar de Pets Perdidos & Alerta Comunitário por Raio',
+    category: 'Comunidade & Resgates',
+    description: 'Habilita o cadastro de cães, gatos e outros pets perdidos com a localização onde foram vistos. Dispara um pequeno alerta comunitário no painel para todos os tutores cadastrados no raio do endereço.',
+    icon: Radio,
+    enabled: true,
+    requiresSuperAdmin: true
+  },
   {
     id: SYSTEM_MODULE_KEYS.PARCEIROS_GPS,
     name: 'Rede de Parceiros Credenciados, GPS & Anúncios Rotativos',

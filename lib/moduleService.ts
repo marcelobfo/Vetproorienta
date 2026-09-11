@@ -13,6 +13,7 @@ export interface SystemModule {
 
 export const SYSTEM_MODULE_KEYS = {
   PARCEIROS_GPS: 'mod-parceiros-gps',
+  LOST_PETS_RADAR: 'mod-lost-pets',
   HOME_BENEFITS_MODE: 'mod-home-benefits-mode', // 'benefits' | 'comparison' | 'hidden'
   EXPERT_VET: 'mod-expert',
   PRESCRIPTION: 'mod-prescription',
@@ -25,6 +26,19 @@ export const SYSTEM_MODULE_KEYS = {
 export type HomeAdvantagesMode = 'benefits' | 'comparison' | 'hidden';
 
 export const DEFAULT_MODULES: SystemModule[] = [
+  {
+    id: 'mod-lost-pets',
+    name: 'Radar de Pets Perdidos & Alerta Comunitário por Raio',
+    category: 'Comunidade & Resgates',
+    description: 'Permite cadastrar pets desaparecidos com a região/bairro onde foram vistos e dispara um alerta visual/notificação para todos os tutores cadastrados no raio de distância do endereço.',
+    enabled: true,
+    requiresSuperAdmin: true,
+    settings: {
+      default_radius_km: 15,
+      show_banner_in_dashboard: true,
+      allow_community_sightings: true
+    }
+  },
   {
     id: 'mod-home-benefits-mode',
     name: 'Apresentação da Home: Benefícios Diretos vs. Comparativo Google',
