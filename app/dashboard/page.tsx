@@ -55,7 +55,7 @@ export default function TutorDashboard() {
         if (localPayUrl) setPaymentUrl(localPayUrl);
         if (localPixQr) setPixQrCode(localPixQr);
         if (localPixCode) setPixCopiaECola(localPixCode);
-        if (localPlan) setPlanName(localPlan === 'especialista' ? 'Especialista' : 'Essencial');
+        if (localPlan) setPlanName(localPlan.includes('anual') ? 'Anual Essencial' : localPlan === 'especialista' ? 'Especialista' : 'Essencial');
 
         let currentUserId = session?.user?.id;
         let email = session?.user?.email?.toLowerCase() || localEmail || '';
@@ -75,16 +75,16 @@ export default function TutorDashboard() {
             if (profile.subscription_id) setSubscriptionId(profile.subscription_id);
 
             const isDbActive = profile.subscription_status === 'ACTIVE' || profile.subscription_status === 'CONFIRMED' || profile.subscription_status === 'RECEIVED';
-            const sub = checkTutorSubscriptionStatus();
+            const sub = checkTutorSubscriptionStatus(email);
             setHasActivePlan(isDbActive || sub.hasActivePlan);
           } else {
             setTutorName(localName || email.split('@')[0] || 'Tutor');
-            const sub = checkTutorSubscriptionStatus();
+            const sub = checkTutorSubscriptionStatus(email);
             setHasActivePlan(sub.hasActivePlan);
           }
         } else {
           setTutorName(localName || 'Tutor');
-          const sub = checkTutorSubscriptionStatus();
+          const sub = checkTutorSubscriptionStatus(email);
           setHasActivePlan(sub.hasActivePlan);
         }
 
@@ -92,8 +92,8 @@ export default function TutorDashboard() {
         const userPets = await getSavedPets(currentUserId);
         setPets(userPets);
 
-        // Carrega histórico de triagens
-        const sessions = await getChatSessions();
+        // Carrega histórico de triagens do usuário
+        const sessions = await getChatSessions(currentUserId);
         setRecentSessions(sessions.slice(0, 3));
       } catch (err) {
         console.error('Erro ao carregar dados do tutor:', err);

@@ -198,17 +198,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           const subStatus = checkTutorSubscriptionStatus(email);
           const isDbActive = profile?.subscription_status === 'ACTIVE' || profile?.subscription_status === 'CONFIRMED' || profile?.subscription_status === 'RECEIVED';
-          // Um tutor só tem plano ativo se estiver confirmado no banco/Asaas
-          const isPlanActive = isDbActive;
+          const isPlanActive = isDbActive || subStatus.hasActivePlan;
           setHasActivePlan(isPlanActive);
 
-          // Sincronizar status local apenas se realmente ativo no banco
-          if (isDbActive) {
+          // Sincronizar status e salvar consistência
+          if (isPlanActive) {
             localStorage.setItem(`vetpro_sub_status_${email.toLowerCase().trim()}`, 'ACTIVE');
             localStorage.setItem(`vetpro_sub_paid_${email.toLowerCase().trim()}`, 'true');
+            localStorage.setItem('vetpro_subscription_status', 'ACTIVE');
+            localStorage.setItem('vetpro_subscription_paid', 'true');
+
+            // Se estiver ativo localmente mas pendente no banco, atualiza em background
+            if (!isDbActive && session?.user?.id) {
+              void supabase.from('user_profiles').update({
+                subscription_status: 'ACTIVE',
+                status: 'active',
+                updated_at: new Date().toISOString()
+              }).eq('id', session.user.id);
+            }
           } else {
             localStorage.setItem(`vetpro_sub_status_${email.toLowerCase().trim()}`, profile?.subscription_status || 'PENDING_PAYMENT');
-            localStorage.removeItem(`vetpro_sub_paid_${email.toLowerCase().trim()}`);
           }
         }
       } catch {

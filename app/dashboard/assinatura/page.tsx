@@ -14,24 +14,6 @@ import { getEvolutionConfig } from '@/lib/evolution';
 
 const AVAILABLE_PLANS = [
   {
-    id: 'essencial',
-    name: 'Essencial Mensal',
-    badge: 'Orientação Contínua',
-    price: 9.90,
-    period: '/mês',
-    billingCycle: 'MONTHLY' as const,
-    billingDesc: 'Cobrança mensal recorrente sem fidelidade',
-    desc: 'Orientação técnica contínua com IA 24h para cães e gatos sem carência.',
-    features: [
-      'Triagem e Anamnese Ativa com IA 24h',
-      'Cadastro e prontuário completo dos seus Pets',
-      'Caderneta de Vacinação Digital com Lembretes',
-      'Radar Comunitário de Pets Perdidos no Bairro',
-      'GPS para Hospitais 24h e Pronto-Socorros',
-    ],
-    isPopular: false,
-  },
-  {
     id: 'anual-promocional',
     name: 'Anual Essencial',
     badge: 'Mais Vendido • Economize 50%',
@@ -49,15 +31,16 @@ const AVAILABLE_PLANS = [
       'GPS para Hospitais 24h e Pronto-Socorro',
     ],
     isPopular: true,
+    isInactive: false,
   },
   {
     id: 'especialista',
     name: 'Especialista',
-    badge: 'Orientação Avançada',
+    badge: 'Orientação Avançada (Em Breve)',
     price: 29.90,
     period: '/mês',
     billingCycle: 'MONTHLY' as const,
-    billingDesc: 'Cobrança mensal recorrente com especialista',
+    billingDesc: 'Cobrança mensal com especialista dedicado',
     desc: 'Apoio técnico veterinário com médico-veterinário especialista dedicado + IA.',
     features: [
       'Tudo do Plano Essencial incluído',
@@ -67,6 +50,26 @@ const AVAILABLE_PLANS = [
       'Acompanhamento de casos crônicos e idosos',
     ],
     isPopular: false,
+    isInactive: true,
+  },
+  {
+    id: 'essencial',
+    name: 'Essencial Mensal',
+    badge: 'Orientação Contínua',
+    price: 9.90,
+    period: '/mês',
+    billingCycle: 'MONTHLY' as const,
+    billingDesc: 'Cobrança mensal recorrente sem fidelidade',
+    desc: 'Orientação técnica contínua com IA 24h para cães e gatos sem carência.',
+    features: [
+      'Triagem e Anamnese Ativa com IA 24h',
+      'Cadastro e prontuário completo dos seus Pets',
+      'Caderneta de Vacinação Digital com Lembretes',
+      'Radar Comunitário de Pets Perdidos no Bairro',
+      'GPS para Hospitais 24h e Pronto-Socorros',
+    ],
+    isPopular: false,
+    isInactive: false,
   },
 ];
 
@@ -1208,12 +1211,11 @@ export default function AssinaturaPage() {
           {AVAILABLE_PLANS.map((plan) => {
             const isCurrent = planId === plan.id || 
               (plan.id === 'essencial' && (planId === 'essencial' || planName.toLowerCase().includes('essencial') && !planName.toLowerCase().includes('anual') && planPrice < 20)) ||
-              (plan.id === 'anual-promocional' && (planId === 'anual-promocional' || planId === 'anual' || planName.toLowerCase().includes('anual') || planPrice > 50 && planPrice < 70)) ||
+              (plan.id === 'anual-promocional' && (planId === 'anual-promocional' || planId === 'anual' || planName.toLowerCase().includes('anual') || (planPrice > 50 && planPrice < 70))) ||
               (plan.id === 'especialista' && (planId === 'especialista' || planName.toLowerCase().includes('especialista')));
 
-            const isUpgrade = !isCurrent && (
-              (plan.id === 'anual-promocional') || 
-              (plan.id === 'especialista' && planId !== 'anual-promocional')
+            const isUpgrade = !isCurrent && !plan.isInactive && (
+              (plan.id === 'anual-promocional' && (planId === 'essencial' || planPrice < 20))
             );
 
             return (
@@ -1222,9 +1224,11 @@ export default function AssinaturaPage() {
                 className={`relative rounded-2xl p-6 border flex flex-col justify-between transition-all ${
                   isCurrent
                     ? 'bg-brand-teal/10 border-brand-teal shadow-lg ring-2 ring-brand-teal/40'
-                    : plan.isPopular
-                      ? 'bg-gradient-to-b from-brand-surface to-brand-surface-2 border-brand-accent/60 shadow-md ring-1 ring-brand-accent/20'
-                      : 'bg-brand-surface-2 border-brand-border-strong hover:border-brand-border'
+                    : plan.isInactive
+                      ? 'bg-brand-surface/70 border-amber-500/30 shadow-sm opacity-90'
+                      : plan.isPopular
+                        ? 'bg-gradient-to-b from-brand-surface to-brand-surface-2 border-brand-accent/60 shadow-md ring-1 ring-brand-accent/20'
+                        : 'bg-brand-surface-2 border-brand-border-strong hover:border-brand-border'
                 }`}
               >
                 {/* Badges de Destaque */}
@@ -1234,7 +1238,12 @@ export default function AssinaturaPage() {
                       <Check className="w-3 h-3" /> Plano Atual
                     </span>
                   )}
-                  {plan.isPopular && !isCurrent && (
+                  {plan.isInactive && (
+                    <span className="bg-amber-500 text-brand-bg text-[10.5px] font-extrabold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-md flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> EM BREVE
+                    </span>
+                  )}
+                  {plan.isPopular && !isCurrent && !plan.isInactive && (
                     <span className="bg-gradient-to-r from-brand-accent-2 to-brand-accent text-brand-accent-ink text-[10.5px] font-extrabold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-md flex items-center gap-1">
                       <Sparkles className="w-3 h-3" /> Mais Vendido
                     </span>
@@ -1243,7 +1252,7 @@ export default function AssinaturaPage() {
 
                 <div>
                   <div className="mb-2">
-                    <span className="text-[11px] font-bold text-brand-teal uppercase tracking-wider block">
+                    <span className={`text-[11px] font-bold uppercase tracking-wider block ${plan.isInactive ? 'text-amber-400' : 'text-brand-teal'}`}>
                       {plan.badge}
                     </span>
                     <h4 className="font-display text-xl font-bold text-brand-text">
@@ -1263,7 +1272,7 @@ export default function AssinaturaPage() {
                     <span className="text-xs text-brand-text-muted">{plan.period}</span>
                   </div>
 
-                  <div className="text-[11px] text-brand-teal font-medium mb-5 pb-3 border-b border-brand-border-strong">
+                  <div className={`text-[11px] font-medium mb-5 pb-3 border-b border-brand-border-strong ${plan.isInactive ? 'text-amber-400/80' : 'text-brand-teal'}`}>
                     {plan.billingDesc}
                   </div>
 
@@ -1271,7 +1280,13 @@ export default function AssinaturaPage() {
                   <ul className="space-y-2.5 mb-6 text-xs text-brand-text">
                     {plan.features.map((feat, fIdx) => (
                       <li key={fIdx} className="flex items-start gap-2">
-                        <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${isCurrent ? 'text-brand-teal' : 'text-brand-text-muted'}`} />
+                        {plan.isInactive ? (
+                          <div className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/40 mt-0.5">
+                            <Lock className="w-2.5 h-2.5 text-amber-400" />
+                          </div>
+                        ) : (
+                          <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${isCurrent ? 'text-brand-teal' : 'text-brand-text-muted'}`} />
+                        )}
                         <span className="leading-tight">{feat}</span>
                       </li>
                     ))}
@@ -1285,6 +1300,15 @@ export default function AssinaturaPage() {
                       <Check className="w-3.5 h-3.5" />
                       <span>Plano Atual Contratado</span>
                     </div>
+                  ) : plan.isInactive ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="w-full py-3 rounded-xl font-display font-bold text-xs bg-brand-surface-2 border border-amber-500/30 text-amber-300/80 cursor-not-allowed flex items-center justify-center gap-2 shadow-none"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <span>EM BREVE — Indisponível no Momento</span>
+                    </button>
                   ) : (
                     <button
                       type="button"
@@ -1299,9 +1323,7 @@ export default function AssinaturaPage() {
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>
                         {isUpgrade 
-                          ? plan.id === 'anual-promocional'
-                            ? 'Fazer Upgrade (Economize 50%)'
-                            : `Fazer Upgrade para ${plan.name}`
+                          ? 'Fazer Upgrade para Anual (Economize 50%)'
                           : `Mudar para ${plan.name}`}
                       </span>
                     </button>

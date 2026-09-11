@@ -839,16 +839,23 @@ export async function testAsaasConnection(
 /**
  * Dispara desbloqueio global do sistema em todas as abas e componentes da aplicação
  */
-export function broadcastSubscriptionUnlock(detail?: { planName?: string; status?: string; source?: string }) {
+export function broadcastSubscriptionUnlock(detail?: { planName?: string; status?: string; source?: string; email?: string }) {
   if (typeof window === 'undefined') return;
 
   const plan = detail?.planName || localStorage.getItem('vetpro_selected_plan') || 'Essencial';
   const status = detail?.status || 'ACTIVE';
+  const email = (detail?.email || localStorage.getItem('vetpro_user_email') || localStorage.getItem('vetpro_tutor_email') || '').trim().toLowerCase();
 
   localStorage.setItem('vetpro_subscription_status', status);
   localStorage.setItem('vetpro_subscription_paid', 'true');
   localStorage.setItem('vetpro_selected_plan', plan);
   localStorage.setItem('vetpro_subscription_created_at', new Date().toISOString());
+
+  if (email) {
+    localStorage.setItem(`vetpro_sub_status_${email}`, status);
+    localStorage.setItem(`vetpro_sub_paid_${email}`, 'true');
+    localStorage.setItem(`vetpro_sub_created_${email}`, new Date().toISOString());
+  }
 
   try {
     const event = new CustomEvent('vetpro_subscription_unlocked', {
@@ -1037,20 +1044,25 @@ export function checkTutorSubscriptionStatus(emailOrCustomerId?: string): { hasA
   const userSubKey = cleanKey ? `vetpro_sub_status_${cleanKey}` : '';
   const userPaidKey = cleanKey ? `vetpro_sub_paid_${cleanKey}` : '';
 
-  // Se passou um email específico, usa a chave com escopo
-  const storedStatus = userSubKey 
-    ? (localStorage.getItem(userSubKey) || localStorage.getItem('vetpro_subscription_status')) 
-    : localStorage.getItem('vetpro_subscription_status');
-    
-  const storedPaid = userPaidKey 
-    ? (localStorage.getItem(userPaidKey) || localStorage.getItem('vetpro_subscription_paid')) 
-    : localStorage.getItem('vetpro_subscription_paid');
+  const globalStatus = localStorage.getItem('vetpro_subscription_status');
+  const globalPaid = localStorage.getItem('vetpro_subscription_paid');
+  const scopedStatus = userSubKey ? localStorage.getItem(userSubKey) : null;
+  const scopedPaid = userPaidKey ? localStorage.getItem(userPaidKey) : null;
+
+  const storedStatus = scopedStatus || globalStatus || 'PENDING_PAYMENT';
+  const isStatusActive = 
+    scopedStatus === 'ACTIVE' || 
+    scopedStatus === 'RECEIVED' || 
+    scopedStatus === 'CONFIRMED' || 
+    scopedPaid === 'true' ||
+    globalStatus === 'ACTIVE' || 
+    globalStatus === 'RECEIVED' || 
+    globalStatus === 'CONFIRMED' || 
+    globalPaid === 'true';
 
   const storedPlanId = localStorage.getItem('vetpro_selected_plan') || 'essencial';
   const resolved = resolvePlanDetails(storedPlanId);
   const planDisplayName = resolved.name;
-
-  const isStatusActive = storedStatus === 'ACTIVE' || storedStatus === 'RECEIVED' || storedStatus === 'CONFIRMED' || storedPaid === 'true';
 
   if (!isStatusActive) {
     return {

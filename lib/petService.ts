@@ -1069,19 +1069,45 @@ export async function getChatSessions(filterUserId?: string): Promise<ChatSessio
       const supabase = getSupabaseClient();
       let query = supabase
         .from('chat_sessions')
-        .select(`
-          *,
-          chat_messages (*)
-        `)
+        .select('*')
         .order('updated_at', { ascending: false });
 
       if (targetUserId && targetUserId !== 'all') {
-        query = query.eq('user_id', targetUserId);
+        query = query.or(`user_id.eq.${targetUserId},user_id.is.null`);
       }
 
       const { data: sessionRows, error } = await query;
 
       if (!error && sessionRows && sessionRows.length > 0) {
+        const sessionIds = sessionRows.map((s: any) => s.id).filter(isValidUUID);
+        let msgMap: Record<string, any[]> = {};
+        
+        if (sessionIds.length > 0) {
+          try {
+            const { data: msgRows } = await supabase
+              .from('chat_messages')
+              .select('*')
+              .in('session_id', sessionIds)
+              .order('created_at', { ascending: true });
+
+            if (msgRows) {
+              for (const m of msgRows) {
+                if (!msgMap[m.session_id]) msgMap[m.session_id] = [];
+                msgMap[m.session_id].push({
+                  id: m.id,
+                  session_id: m.session_id,
+                  role: (m.sender_type === 'ai' || m.sender_type === 'system') ? 'model' : 'user',
+                  content: m.content,
+                  image_url: m.image_url,
+                  created_at: m.created_at
+                });
+              }
+            }
+          } catch {
+            // segue
+          }
+        }
+
         remoteSessions = sessionRows.map((s: any) => ({
           id: s.id,
           tenant_id: s.tenant_id,
@@ -1098,16 +1124,7 @@ export async function getChatSessions(filterUserId?: string): Promise<ChatSessio
           summary: s.summary,
           created_at: s.created_at,
           updated_at: s.updated_at || s.created_at,
-          messages: (s.chat_messages || [])
-            .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-            .map((m: any) => ({
-              id: m.id,
-              session_id: m.session_id,
-              role: (m.sender_type === 'ai' || m.sender_type === 'system') ? 'model' : 'user',
-              content: m.content,
-              image_url: m.image_url,
-              created_at: m.created_at
-            }))
+          messages: msgMap[s.id] || []
         }));
       }
     } catch (e) {

@@ -34,12 +34,11 @@ export async function GET(req: NextRequest) {
     }
 
     const adminClient = getSupabaseAdminClient() || getSupabaseClient();
+
+    // 1. Buscar sessões com query desacoplada (evita falha por PostgREST relation cache)
     let query = adminClient
       .from('chat_sessions')
-      .select(`
-        *,
-        chat_messages (*)
-      `)
+      .select('*')
       .order('updated_at', { ascending: false });
 
     if (sessionId && isValidUUID(sessionId)) {
@@ -47,17 +46,51 @@ export async function GET(req: NextRequest) {
     } else if (petId && isValidUUID(petId)) {
       query = query.eq('pet_id', petId);
     } else if (userId && userId !== 'all' && isValidUUID(userId)) {
-      query = query.eq('user_id', userId);
+      // Retorna sessões do usuário e também sessões com user_id nulo (criadas antes do login ou sem auth estrita)
+      query = query.or(`user_id.eq.${userId},user_id.is.null`);
     }
 
-    const { data, error } = await query;
+    const { data: rawSessions, error: sessionErr } = await query;
 
-    if (error) {
-      console.warn('[API chat/sessions] Erro ao buscar:', error.message);
-      return NextResponse.json({ success: false, error: error.message, sessions: [] }, { status: 500 });
+    if (sessionErr) {
+      console.warn('[API chat/sessions] Erro ao buscar sessões:', sessionErr.message);
+      return NextResponse.json({ success: false, error: sessionErr.message, sessions: [] }, { status: 500 });
     }
 
-    const sessions = (data || []).map((s: any) => ({
+    const sessionList = rawSessions || [];
+    const sessionIds = sessionList.map((s: any) => s.id).filter(isValidUUID);
+
+    // 2. Buscar mensagens vinculadas de forma segura e desacoplada
+    let messagesBySession: Record<string, any[]> = {};
+    if (sessionIds.length > 0) {
+      try {
+        const { data: msgRows, error: msgErr } = await adminClient
+          .from('chat_messages')
+          .select('*')
+          .in('session_id', sessionIds)
+          .order('created_at', { ascending: true });
+
+        if (!msgErr && msgRows) {
+          for (const msg of msgRows) {
+            if (!messagesBySession[msg.session_id]) {
+              messagesBySession[msg.session_id] = [];
+            }
+            messagesBySession[msg.session_id].push({
+              id: msg.id,
+              session_id: msg.session_id,
+              role: (msg.sender_type === 'ai' || msg.sender_type === 'system') ? 'model' : 'user',
+              content: msg.content || '',
+              image_url: msg.image_url || null,
+              created_at: msg.created_at,
+            });
+          }
+        }
+      } catch (mErr) {
+        console.warn('[API chat/sessions] Aviso ao buscar mensagens:', mErr);
+      }
+    }
+
+    const sessions = sessionList.map((s: any) => ({
       id: s.id,
       tenant_id: s.tenant_id,
       user_id: s.user_id,
@@ -73,16 +106,7 @@ export async function GET(req: NextRequest) {
       summary: s.summary,
       created_at: s.created_at,
       updated_at: s.updated_at || s.created_at,
-      messages: (s.chat_messages || [])
-        .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-        .map((m: any) => ({
-          id: m.id,
-          session_id: m.session_id,
-          role: (m.sender_type === 'ai' || m.sender_type === 'system') ? 'model' : 'user',
-          content: m.content,
-          image_url: m.image_url,
-          created_at: m.created_at,
-        })),
+      messages: messagesBySession[s.id] || [],
     }));
 
     return NextResponse.json({ success: true, sessions });
@@ -99,7 +123,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { sessionData, messages } = body;
+    const { sessionData, messages, supabaseConfig } = body;
 
     if (!sessionData) {
       return NextResponse.json({ success: false, error: 'Dados da sessão não informados.' }, { status: 400 });
@@ -144,8 +168,11 @@ export async function POST(req: NextRequest) {
       messages: [],
     };
 
-    if (isSupabaseConfigured()) {
-      const adminClient = getSupabaseAdminClient() || getSupabaseClient();
+    const customSupabaseUrl = supabaseConfig?.url;
+    const customSupabaseKey = supabaseConfig?.serviceRoleKey || supabaseConfig?.anonKey;
+
+    if (isSupabaseConfigured(customSupabaseUrl, customSupabaseKey)) {
+      const adminClient = getSupabaseAdminClient(customSupabaseUrl, customSupabaseKey) || getSupabaseClient(customSupabaseUrl, customSupabaseKey);
       
       // Buscar tenant_id padrão se não fornecido
       if (!sessionPayload.tenant_id) {
